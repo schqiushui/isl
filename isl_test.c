@@ -4791,7 +4791,7 @@ static int test_ast_gen1(isl_ctx *ctx)
 			&before_for, &data);
 	build = isl_ast_build_set_after_each_for(build,
 			&after_for, &data);
-	tree = isl_ast_build_ast_from_schedule(build, schedule);
+	tree = isl_ast_build_node_from_schedule_map(build, schedule);
 	isl_ast_build_free(build);
 	if (!tree)
 		return -1;
@@ -4825,7 +4825,7 @@ static int test_ast_gen2(isl_ctx *ctx)
 	str = "{ [i,j] -> atomic[1] : i + j = 1; [i,j] -> unroll[1] : i = j }";
 	options = isl_union_map_read_from_str(ctx, str);
 	build = isl_ast_build_set_options(build, options);
-	tree = isl_ast_build_ast_from_schedule(build, schedule);
+	tree = isl_ast_build_node_from_schedule_map(build, schedule);
 	isl_ast_build_free(build);
 	if (!tree)
 		return -1;
@@ -4871,7 +4871,7 @@ static int test_ast_gen3(isl_ctx *ctx)
 	build = isl_ast_build_set_options(build, options);
 	build = isl_ast_build_set_at_each_domain(build,
 			&count_domains, &n_domain);
-	tree = isl_ast_build_ast_from_schedule(build, schedule);
+	tree = isl_ast_build_node_from_schedule_map(build, schedule);
 	isl_ast_build_free(build);
 	if (!tree)
 		return -1;
@@ -4907,7 +4907,7 @@ static int test_ast_gen4(isl_ctx *ctx)
 	schedule = isl_union_map_read_from_str(ctx, str);
 	set = isl_set_universe(isl_space_params_alloc(ctx, 0));
 	build = isl_ast_build_from_context(set);
-	tree = isl_ast_build_ast_from_schedule(build, schedule);
+	tree = isl_ast_build_node_from_schedule_map(build, schedule);
 	isl_ast_build_free(build);
 	if (!tree)
 		return -1;
@@ -4924,7 +4924,7 @@ static int test_ast_gen4(isl_ctx *ctx)
 	schedule = isl_union_map_read_from_str(ctx, str);
 	set = isl_set_universe(isl_space_params_alloc(ctx, 0));
 	build = isl_ast_build_from_context(set);
-	tree = isl_ast_build_ast_from_schedule(build, schedule);
+	tree = isl_ast_build_node_from_schedule_map(build, schedule);
 	isl_ast_build_free(build);
 	if (!tree)
 		return -1;
@@ -4959,7 +4959,7 @@ static __isl_give isl_ast_node *create_leaf(__isl_take isl_ast_build *build,
 	extra = isl_union_map_copy(schedule);
 	extra = isl_union_map_from_domain(isl_union_map_domain(extra));
 	schedule = isl_union_map_range_product(schedule, extra);
-	tree = isl_ast_build_ast_from_schedule(build, schedule);
+	tree = isl_ast_build_node_from_schedule_map(build, schedule);
 	isl_ast_build_free(build);
 
 	if (!tree)
@@ -5002,7 +5002,7 @@ static int test_ast_gen5(isl_ctx *ctx)
 	build = isl_ast_build_from_context(set);
 	build = isl_ast_build_set_options(build, options);
         build = isl_ast_build_set_create_leaf(build, &create_leaf, NULL);
-	tree = isl_ast_build_ast_from_schedule(build, schedule);
+	tree = isl_ast_build_node_from_schedule_map(build, schedule);
 	isl_ast_build_free(build);
 	isl_ast_node_free(tree);
 	if (!tree)
@@ -5180,6 +5180,174 @@ static int test_compute_divs(isl_ctx *ctx)
 	if (!set)
 		return -1;
 
+	return 0;
+}
+
+/* Check that the reaching domain elements and the prefix schedule
+ * at a leaf node are the same before and after grouping.
+ */
+static int test_schedule_tree_group_1(isl_ctx *ctx)
+{
+	int equal;
+	const char *str;
+	isl_id *id;
+	isl_union_set *uset;
+	isl_multi_union_pw_aff *mupa;
+	isl_union_pw_multi_aff *upma1, *upma2;
+	isl_union_set *domain1, *domain2;
+	isl_union_map *umap1, *umap2;
+	isl_schedule_node *node;
+
+	str = "{ S1[i,j] : 0 <= i,j < 10; S2[i,j] : 0 <= i,j < 10 }";
+	uset = isl_union_set_read_from_str(ctx, str);
+	node = isl_schedule_node_from_domain(uset);
+	node = isl_schedule_node_child(node, 0);
+	str = "[{ S1[i,j] -> [i]; S2[i,j] -> [9 - i] }]";
+	mupa = isl_multi_union_pw_aff_read_from_str(ctx, str);
+	node = isl_schedule_node_insert_partial_schedule(node, mupa);
+	node = isl_schedule_node_child(node, 0);
+	str = "[{ S1[i,j] -> [j]; S2[i,j] -> [j] }]";
+	mupa = isl_multi_union_pw_aff_read_from_str(ctx, str);
+	node = isl_schedule_node_insert_partial_schedule(node, mupa);
+	node = isl_schedule_node_child(node, 0);
+	umap1 = isl_schedule_node_get_prefix_schedule_union_map(node);
+	upma1 = isl_schedule_node_get_prefix_schedule_union_pw_multi_aff(node);
+	domain1 = isl_schedule_node_get_domain(node);
+	id = isl_id_alloc(ctx, "group", NULL);
+	node = isl_schedule_node_parent(node);
+	node = isl_schedule_node_group(node, id);
+	node = isl_schedule_node_child(node, 0);
+	umap2 = isl_schedule_node_get_prefix_schedule_union_map(node);
+	upma2 = isl_schedule_node_get_prefix_schedule_union_pw_multi_aff(node);
+	domain2 = isl_schedule_node_get_domain(node);
+	equal = isl_union_pw_multi_aff_plain_is_equal(upma1, upma2);
+	if (equal >= 0 && equal)
+		equal = isl_union_set_is_equal(domain1, domain2);
+	if (equal >= 0 && equal)
+		equal = isl_union_map_is_equal(umap1, umap2);
+	isl_union_map_free(umap1);
+	isl_union_map_free(umap2);
+	isl_union_set_free(domain1);
+	isl_union_set_free(domain2);
+	isl_union_pw_multi_aff_free(upma1);
+	isl_union_pw_multi_aff_free(upma2);
+	isl_schedule_node_free(node);
+
+	if (equal < 0)
+		return -1;
+	if (!equal)
+		isl_die(ctx, isl_error_unknown,
+			"expressions not equal", return -1);
+
+	return 0;
+}
+
+/* Check that we can have nested groupings and that the union map
+ * schedule representation is the same before and after the grouping.
+ * Note that after the grouping, the union map representation contains
+ * the domain constraints from the ranges of the expansion nodes,
+ * while they are missing from the union map representation of
+ * the tree without expansion nodes.
+ *
+ * Also check that the global expansion is as expected.
+ */
+static int test_schedule_tree_group_2(isl_ctx *ctx)
+{
+	int equal, equal_expansion;
+	const char *str;
+	isl_id *id;
+	isl_union_set *uset;
+	isl_union_map *umap1, *umap2;
+	isl_union_map *expansion1, *expansion2;
+	isl_union_set_list *filters;
+	isl_multi_union_pw_aff *mupa;
+	isl_schedule *schedule;
+	isl_schedule_node *node;
+
+	str = "{ S1[i,j] : 0 <= i,j < 10; S2[i,j] : 0 <= i,j < 10; "
+		"S3[i,j] : 0 <= i,j < 10 }";
+	uset = isl_union_set_read_from_str(ctx, str);
+	node = isl_schedule_node_from_domain(uset);
+	node = isl_schedule_node_child(node, 0);
+	str = "[{ S1[i,j] -> [i]; S2[i,j] -> [i]; S3[i,j] -> [i] }]";
+	mupa = isl_multi_union_pw_aff_read_from_str(ctx, str);
+	node = isl_schedule_node_insert_partial_schedule(node, mupa);
+	node = isl_schedule_node_child(node, 0);
+	str = "{ S1[i,j] }";
+	uset = isl_union_set_read_from_str(ctx, str);
+	filters = isl_union_set_list_from_union_set(uset);
+	str = "{ S2[i,j]; S3[i,j] }";
+	uset = isl_union_set_read_from_str(ctx, str);
+	filters = isl_union_set_list_add(filters, uset);
+	node = isl_schedule_node_insert_sequence(node, filters);
+	node = isl_schedule_node_child(node, 1);
+	node = isl_schedule_node_child(node, 0);
+	str = "{ S2[i,j] }";
+	uset = isl_union_set_read_from_str(ctx, str);
+	filters = isl_union_set_list_from_union_set(uset);
+	str = "{ S3[i,j] }";
+	uset = isl_union_set_read_from_str(ctx, str);
+	filters = isl_union_set_list_add(filters, uset);
+	node = isl_schedule_node_insert_sequence(node, filters);
+
+	schedule = isl_schedule_node_get_schedule(node);
+	umap1 = isl_schedule_get_map(schedule);
+	uset = isl_schedule_get_domain(schedule);
+	umap1 = isl_union_map_intersect_domain(umap1, uset);
+	isl_schedule_free(schedule);
+
+	node = isl_schedule_node_parent(node);
+	node = isl_schedule_node_parent(node);
+	id = isl_id_alloc(ctx, "group1", NULL);
+	node = isl_schedule_node_group(node, id);
+	node = isl_schedule_node_child(node, 1);
+	node = isl_schedule_node_child(node, 0);
+	id = isl_id_alloc(ctx, "group2", NULL);
+	node = isl_schedule_node_group(node, id);
+
+	schedule = isl_schedule_node_get_schedule(node);
+	umap2 = isl_schedule_get_map(schedule);
+	isl_schedule_free(schedule);
+
+	node = isl_schedule_node_root(node);
+	node = isl_schedule_node_child(node, 0);
+	expansion1 = isl_schedule_node_get_subtree_expansion(node);
+	isl_schedule_node_free(node);
+
+	str = "{ group1[i] -> S1[i,j] : 0 <= i,j < 10; "
+		"group1[i] -> S2[i,j] : 0 <= i,j < 10; "
+		"group1[i] -> S3[i,j] : 0 <= i,j < 10 }";
+
+	expansion2 = isl_union_map_read_from_str(ctx, str);
+
+	equal = isl_union_map_is_equal(umap1, umap2);
+	equal_expansion = isl_union_map_is_equal(expansion1, expansion2);
+
+	isl_union_map_free(umap1);
+	isl_union_map_free(umap2);
+	isl_union_map_free(expansion1);
+	isl_union_map_free(expansion2);
+
+	if (equal < 0 || equal_expansion < 0)
+		return -1;
+	if (!equal)
+		isl_die(ctx, isl_error_unknown,
+			"expressions not equal", return -1);
+	if (!equal_expansion)
+		isl_die(ctx, isl_error_unknown,
+			"unexpected expansion", return -1);
+
+	return 0;
+}
+
+/* Some tests for the isl_schedule_node_group function.
+ */
+static int test_schedule_tree_group(isl_ctx *ctx)
+{
+	if (test_schedule_tree_group_1(ctx) < 0)
+		return -1;
+	if (test_schedule_tree_group_2(ctx) < 0)
+		return -1;
 	return 0;
 }
 
@@ -5394,6 +5562,7 @@ struct {
 	{ "affine", &test_aff },
 	{ "injective", &test_injective },
 	{ "schedule", &test_schedule },
+	{ "schedule tree grouping", &test_schedule_tree_group },
 	{ "tile", &test_tile },
 	{ "union_pw", &test_union_pw },
 	{ "parse", &test_parse },
