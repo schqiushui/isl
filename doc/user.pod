@@ -7271,6 +7271,11 @@ set node.
 
 A leaf of the schedule tree.  Leaf nodes do not impose any ordering.
 
+=item C<isl_schedule_node_mark>
+
+A mark node can be used to attach any kind of information to a subtree
+of the schedule tree.
+
 =item C<isl_schedule_node_sequence>
 
 A sequence node has one or more children, each of which is a filter node.
@@ -7767,6 +7772,10 @@ See L</"AST Generation Options (Schedule Tree)">.
 	isl_schedule_node_filter_get_filter(
 		__isl_keep isl_schedule_node *node);
 
+	#include <isl/schedule_node.h>
+	__isl_give isl_id *isl_schedule_node_mark_get_id(
+		__isl_keep isl_schedule_node *node);
+
 The following functions can be used to obtain an C<isl_multi_union_pw_aff>,
 an C<isl_union_pw_multi_aff> or C<isl_union_map> representation of
 partial schedules related to the node.
@@ -7863,6 +7872,14 @@ This function inserts a new context node with the given context constraints.
 This function inserts a new filter node with the given filter.
 If the original node already pointed to a filter node, then the
 two filter nodes are merged into one.
+
+	#include <isl/schedule_node.h>
+	__isl_give isl_schedule_node *
+	isl_schedule_node_insert_mark(
+		__isl_take isl_schedule_node *node,
+		__isl_take isl_id *mark);
+
+This function inserts a new mark node with the give mark identifier.
 
 	#include <isl/schedule_node.h>
 	__isl_give isl_schedule_node *
@@ -8528,11 +8545,13 @@ The basic properties of an AST node can be obtained as follows.
 The type of an AST node is one of
 C<isl_ast_node_for>,
 C<isl_ast_node_if>,
-C<isl_ast_node_block> or
+C<isl_ast_node_block>,
+C<isl_ast_node_mark> or
 C<isl_ast_node_user>.
 An C<isl_ast_node_for> represents a for node.
 An C<isl_ast_node_if> represents an if node.
 An C<isl_ast_node_block> represents a compound node.
+An C<isl_ast_node_mark> introduces a mark in the AST.
 An C<isl_ast_node_user> represents an expression statement.
 An expression statement typically corresponds to a domain element, i.e.,
 one of the elements that is visited by the AST.
@@ -8570,6 +8589,15 @@ exactly once.
 	isl_ast_node_block_get_children(
 		__isl_keep isl_ast_node *node);
 
+	__isl_give isl_id *isl_ast_node_mark_get_id(
+		__isl_keep isl_ast_node *node);
+	__isl_give isl_ast_node *isl_ast_node_mark_get_node(
+		__isl_keep isl_ast_node *node);
+
+C<isl_ast_node_mark_get_id> returns the identifier of the mark.
+C<isl_ast_node_mark_get_node> returns the child node that is being marked.
+
+	#include <isl/ast.h>
 	__isl_give isl_ast_expr *isl_ast_node_user_get_expr(
 		__isl_keep isl_ast_node *node);
 
@@ -9628,6 +9656,19 @@ user defined node created using the following function.
 			__isl_take isl_ast_node *node,
 			__isl_keep isl_ast_build *build,
 			void *user), void *user);
+	__isl_give isl_ast_build *
+	isl_ast_build_set_before_each_mark(
+		__isl_take isl_ast_build *build,
+		int (*fn)(__isl_keep isl_id *mark,
+			__isl_keep isl_ast_build *build,
+			void *user), void *user);
+	__isl_give isl_ast_build *
+	isl_ast_build_set_after_each_mark(
+		__isl_take isl_ast_build *build,
+		__isl_give isl_ast_node *(*fn)(
+			__isl_take isl_ast_node *node,
+			__isl_keep isl_ast_build *build,
+			void *user), void *user);
 
 The callback set by C<isl_ast_build_set_at_each_domain> will
 be called for each domain AST node.
@@ -9642,7 +9683,15 @@ C<isl_ast_node_set_annotation>) to the constructed for node.
 In particular, if the user has also specified an C<after_each_for>
 callback, then the annotation can be retrieved from the node passed to
 that callback using C<isl_ast_node_get_annotation>.
-All callbacks should C<NULL> on failure.
+The callbacks set by C<isl_ast_build_set_before_each_mark>
+and C<isl_ast_build_set_after_each_mark> will be called for each
+mark AST node that is created, i.e., for each mark schedule node
+in the input schedule tree.  The first will be called in depth-first
+pre-order, while the second will be called in depth-first post-order.
+Since the callback set by C<isl_ast_build_set_before_each_mark>
+is called before the mark AST node is actually constructed, it is passed
+the identifier of the mark node.
+All callbacks should C<NULL> (or -1) on failure.
 The given C<isl_ast_build> can be used to create new
 C<isl_ast_expr> objects using C<isl_ast_build_expr_from_pw_aff>
 or C<isl_ast_build_call_from_pw_multi_aff>.
