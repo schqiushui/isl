@@ -34,8 +34,16 @@ ISL_DECLARE_LIST(schedule_tree)
  * "contraction" maps these elements back to the corresponding
  * reaching domain element.  It does not involve any domain constraints.
  *
+ * The "extension" field is valid when the is isl_schedule_node_extension
+ * maps outer schedule dimenions (the flat product of the outer band nodes)
+ * to additional iteration domains.
+ *
  * The "filter" field is valid when type is isl_schedule_node_filter
  * and represents the statement instances selected by the node.
+ *
+ * The "guard" field is valid when type is isl_schedule_node_guard
+ * and represents constraints on the flat product of the outer band nodes
+ * that need to be enforced by the outer nodes in the generated AST.
  *
  * The "mark" field is valid when type is isl_schedule_node_mark and
  * identifies the mark.
@@ -60,7 +68,9 @@ struct isl_schedule_tree {
 			isl_union_pw_multi_aff *contraction;
 			isl_union_map *expansion;
 		};
+		isl_union_map *extension;
 		isl_union_set *filter;
+		isl_set *guard;
 		isl_id *mark;
 	};
 	isl_schedule_tree_list *children;
@@ -90,13 +100,20 @@ __isl_give isl_schedule_tree *isl_schedule_tree_from_domain(
 __isl_give isl_schedule_tree *isl_schedule_tree_from_expansion(
 	__isl_take isl_union_pw_multi_aff *contraction,
 	__isl_take isl_union_map *expansion);
+__isl_give isl_schedule_tree *isl_schedule_tree_from_extension(
+	__isl_take isl_union_map *extension);
 __isl_give isl_schedule_tree *isl_schedule_tree_from_filter(
 	__isl_take isl_union_set *filter);
+__isl_give isl_schedule_tree *isl_schedule_tree_from_guard(
+	__isl_take isl_set *guard);
 __isl_give isl_schedule_tree *isl_schedule_tree_from_children(
 	enum isl_schedule_node_type type,
 	__isl_take isl_schedule_tree_list *list);
 __isl_give isl_schedule_tree *isl_schedule_tree_from_pair(
 	enum isl_schedule_node_type type, __isl_take isl_schedule_tree *tree1,
+	__isl_take isl_schedule_tree *tree2);
+__isl_give isl_schedule_tree *isl_schedule_tree_sequence_pair(
+	__isl_take isl_schedule_tree *tree1,
 	__isl_take isl_schedule_tree *tree2);
 
 int isl_schedule_tree_is_subtree_anchored(__isl_keep isl_schedule_tree *tree);
@@ -140,10 +157,17 @@ isl_schedule_tree_expansion_set_contraction_and_expansion(
 	__isl_take isl_schedule_tree *tree,
 	__isl_take isl_union_pw_multi_aff *contraction,
 	__isl_take isl_union_map *expansion);
+__isl_give isl_union_map *isl_schedule_tree_extension_get_extension(
+	__isl_keep isl_schedule_tree *tree);
+__isl_give isl_schedule_tree *isl_schedule_tree_extension_set_extension(
+	__isl_take isl_schedule_tree *tree,
+	__isl_take isl_union_map *extension);
 __isl_give isl_union_set *isl_schedule_tree_filter_get_filter(
 	__isl_keep isl_schedule_tree *tree);
 __isl_give isl_schedule_tree *isl_schedule_tree_filter_set_filter(
 	__isl_take isl_schedule_tree *tree, __isl_take isl_union_set *filter);
+__isl_give isl_set *isl_schedule_tree_guard_get_guard(
+	__isl_keep isl_schedule_tree *tree);
 __isl_give isl_id *isl_schedule_tree_mark_get_id(
 	__isl_keep isl_schedule_tree *tree);
 
@@ -177,10 +201,15 @@ __isl_give isl_schedule_tree *isl_schedule_tree_insert_expansion(
 	__isl_take isl_schedule_tree *tree,
 	__isl_take isl_union_pw_multi_aff *contraction,
 	__isl_take isl_union_map *expansion);
+__isl_give isl_schedule_tree *isl_schedule_tree_insert_extension(
+	__isl_take isl_schedule_tree *tree,
+	__isl_take isl_union_map *extension);
 __isl_give isl_schedule_tree *isl_schedule_tree_insert_filter(
 	__isl_take isl_schedule_tree *tree, __isl_take isl_union_set *filter);
 __isl_give isl_schedule_tree *isl_schedule_tree_children_insert_filter(
 	__isl_take isl_schedule_tree *tree, __isl_take isl_union_set *filter);
+__isl_give isl_schedule_tree *isl_schedule_tree_insert_guard(
+	__isl_take isl_schedule_tree *tree, __isl_take isl_set *guard);
 __isl_give isl_schedule_tree *isl_schedule_tree_insert_mark(
 	__isl_take isl_schedule_tree *tree, __isl_take isl_id *mark);
 
@@ -208,6 +237,9 @@ __isl_give isl_schedule_tree *isl_schedule_tree_drop_child(
 __isl_give isl_schedule_tree *isl_schedule_tree_replace_child(
 	__isl_take isl_schedule_tree *tree, int pos,
 	__isl_take isl_schedule_tree *new_child);
+__isl_give isl_schedule_tree *isl_schedule_tree_sequence_splice(
+	__isl_take isl_schedule_tree *tree, int pos,
+	__isl_take isl_schedule_tree *child);
 
 __isl_give isl_schedule_tree *isl_schedule_tree_reset_user(
 	__isl_take isl_schedule_tree *tree);
