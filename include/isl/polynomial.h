@@ -662,4 +662,6 @@ __isl_give isl_union_pw_qpolynomial *isl_union_pw_qpolynomial_to_polynomial(
 }
 #endif
 
+#include <isl/dim.h>
+
 #endif

@@ -143,4 +143,6 @@ void isl_constraint_dump(__isl_keep isl_constraint *c);
 }
 #endif
 
+#include <isl/dim.h>
+
 #endif

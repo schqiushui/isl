@@ -535,4 +535,6 @@ __isl_give char *isl_set_to_str(__isl_keep isl_set *set);
 }
 #endif
 
+#include <isl/dim.h>
+
 #endif
