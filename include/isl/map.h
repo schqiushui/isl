@@ -701,6 +701,4 @@ ISL_DECLARE_LIST_FN(map)
 }
 #endif
 
-#include <isl/dim.h>
-
 #endif
