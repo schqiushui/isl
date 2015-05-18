@@ -775,7 +775,7 @@ error:
 	return NULL;
 }
 
-/* Return 1 is the singleton map "map1" is a subset of "map2",
+/* Return 1 if the singleton map "map1" is a subset of "map2",
  * i.e., if the single element of "map1" is also an element of "map2".
  * Assumes "map2" has known divs.
  */
@@ -789,7 +789,8 @@ static int map_is_singleton_subset(__isl_keep isl_map *map1,
 	if (!map1 || !map2)
 		return -1;
 	if (map1->n != 1)
-		return -1;
+		isl_die(isl_map_get_ctx(map1), isl_error_internal,
+			"expecting single-disjunct input", return -1);
 
 	point = singleton_extract_point(map1->p[0]);
 	if (!point)
