@@ -13,6 +13,7 @@
 
 #include <isl/arg.h>
 #include <isl/ctx.h>
+#include <isl_config.h>
 
 static struct isl_arg help_arg[] = {
 ISL_ARG_PHANTOM_BOOL('h', "help", NULL, "print this help, then exit")
@@ -20,6 +21,8 @@ ISL_ARG_PHANTOM_BOOL('h', "help", NULL, "print this help, then exit")
 
 static void set_default_choice(struct isl_arg *arg, void *opt)
 {
+	if (arg->offset == (size_t) -1)
+		return;
 	*(unsigned *)(((char *)opt) + arg->offset) = arg->u.choice.default_value;
 }
 
@@ -809,7 +812,8 @@ static int parse_choice_option(struct isl_arg *decl, char **arg,
 
 	if (!has_argument && (!arg[1] || arg[1][0] == '-')) {
 		unsigned u = decl->u.choice.default_selected;
-		*(unsigned *)(((char *)opt) + decl->offset) = u;
+		if (decl->offset != (size_t) -1)
+			*(unsigned *)(((char *)opt) + decl->offset) = u;
 		if (decl->u.choice.set)
 			decl->u.choice.set(opt, u);
 
@@ -826,7 +830,8 @@ static int parse_choice_option(struct isl_arg *decl, char **arg,
 			continue;
 
 		u = decl->u.choice.choice[i].value;
-		*(unsigned *)(((char *)opt) + decl->offset) = u;
+		if (decl->offset != (size_t) -1)
+			*(unsigned *)(((char *)opt) + decl->offset) = u;
 		if (decl->u.choice.set)
 			decl->u.choice.set(opt, u);
 

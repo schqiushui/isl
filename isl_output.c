@@ -515,7 +515,12 @@ error:
 static __isl_give isl_printer *print_div(__isl_keep isl_space *dim,
 	__isl_keep isl_mat *div, int pos, __isl_take isl_printer *p)
 {
-	int c = p->output_format == ISL_FORMAT_C;
+	int c;
+
+	if (!p || !div)
+		return isl_printer_free(p);
+
+	c = p->output_format == ISL_FORMAT_C;
 	p = isl_printer_print_str(p, c ? "floord(" : "floor((");
 	p = print_affine_of_len(dim, div, p,
 				div->row[pos] + 1, div->n_col - 1);
@@ -554,22 +559,19 @@ static __isl_give isl_printer *print_div_list(__isl_take isl_printer *p,
 }
 
 static __isl_give isl_printer *print_disjunct(__isl_keep isl_basic_map *bmap,
-	__isl_keep isl_space *dim, __isl_take isl_printer *p, int latex)
+	__isl_keep isl_space *space, __isl_take isl_printer *p, int latex)
 {
 	if (bmap->n_div > 0) {
-		isl_space *space;
 		isl_mat *div;
 
-		space = isl_basic_map_get_space(bmap);
 		div = isl_basic_map_get_divs(bmap);
 		p = isl_printer_print_str(p, s_open_exists[latex]);
 		p = print_div_list(p, space, div, latex);
-		isl_space_free(space);
 		isl_mat_free(div);
 		p = isl_printer_print_str(p, ": ");
 	}
 
-	p = print_constraints(bmap, dim, p, latex);
+	p = print_constraints(bmap, space, p, latex);
 
 	if (bmap->n_div > 0)
 		p = isl_printer_print_str(p, s_close_exists[latex]);
@@ -1008,24 +1010,6 @@ error:
 	return NULL;
 }
 
-void isl_basic_map_print(__isl_keep isl_basic_map *bmap, FILE *out, int indent,
-	const char *prefix, const char *suffix, unsigned output_format)
-{
-	isl_printer *printer;
-
-	if (!bmap)
-		return;
-
-	printer = isl_printer_to_file(bmap->ctx, out);
-	printer = isl_printer_set_indent(printer, indent);
-	printer = isl_printer_set_prefix(printer, prefix);
-	printer = isl_printer_set_suffix(printer, suffix);
-	printer = isl_printer_set_output_format(printer, output_format);
-	isl_printer_print_basic_map(printer, bmap);
-
-	isl_printer_free(printer);
-}
-
 __isl_give isl_printer *isl_printer_print_basic_set(__isl_take isl_printer *p,
 	__isl_keep isl_basic_set *bset)
 {
@@ -1048,24 +1032,6 @@ error:
 	return NULL;
 }
 
-void isl_basic_set_print(struct isl_basic_set *bset, FILE *out, int indent,
-	const char *prefix, const char *suffix, unsigned output_format)
-{
-	isl_printer *printer;
-
-	if (!bset)
-		return;
-
-	printer = isl_printer_to_file(bset->ctx, out);
-	printer = isl_printer_set_indent(printer, indent);
-	printer = isl_printer_set_prefix(printer, prefix);
-	printer = isl_printer_set_suffix(printer, suffix);
-	printer = isl_printer_set_output_format(printer, output_format);
-	isl_printer_print_basic_set(printer, bset);
-
-	isl_printer_free(printer);
-}
-
 __isl_give isl_printer *isl_printer_print_set(__isl_take isl_printer *p,
 	__isl_keep isl_set *set)
 {
@@ -1085,22 +1051,6 @@ __isl_give isl_printer *isl_printer_print_set(__isl_take isl_printer *p,
 error:
 	isl_printer_free(p);
 	return NULL;
-}
-
-void isl_set_print(struct isl_set *set, FILE *out, int indent,
-	unsigned output_format)
-{
-	isl_printer *printer;
-
-	if (!set)
-		return;
-
-	printer = isl_printer_to_file(set->ctx, out);
-	printer = isl_printer_set_indent(printer, indent);
-	printer = isl_printer_set_output_format(printer, output_format);
-	printer = isl_printer_print_set(printer, set);
-
-	isl_printer_free(printer);
 }
 
 __isl_give isl_printer *isl_printer_print_map(__isl_take isl_printer *p,
@@ -1130,7 +1080,7 @@ struct isl_union_print_data {
 	int first;
 };
 
-static int print_map_body(__isl_take isl_map *map, void *user)
+static isl_stat print_map_body(__isl_take isl_map *map, void *user)
 {
 	struct isl_union_print_data *data;
 	data = (struct isl_union_print_data *)user;
@@ -1142,7 +1092,7 @@ static int print_map_body(__isl_take isl_map *map, void *user)
 	data->p = isl_map_print_isl_body(map, data->p);
 	isl_map_free(map);
 
-	return 0;
+	return isl_stat_ok;
 }
 
 static __isl_give isl_printer *isl_union_map_print_isl(
@@ -1167,7 +1117,7 @@ static __isl_give isl_printer *isl_union_map_print_isl(
 	return p;
 }
 
-static int print_latex_map_body(__isl_take isl_map *map, void *user)
+static isl_stat print_latex_map_body(__isl_take isl_map *map, void *user)
 {
 	struct isl_union_print_data *data;
 	data = (struct isl_union_print_data *)user;
@@ -1179,7 +1129,7 @@ static int print_latex_map_body(__isl_take isl_map *map, void *user)
 	data->p = isl_map_print_latex(map, data->p);
 	isl_map_free(map);
 
-	return 0;
+	return isl_stat_ok;
 }
 
 static __isl_give isl_printer *isl_union_map_print_latex(
@@ -1225,22 +1175,6 @@ __isl_give isl_printer *isl_printer_print_union_set(__isl_take isl_printer *p,
 error:
 	isl_printer_free(p);
 	return NULL;
-}
-
-void isl_map_print(__isl_keep isl_map *map, FILE *out, int indent,
-	unsigned output_format)
-{
-	isl_printer *printer;
-
-	if (!map)
-		return;
-
-	printer = isl_printer_to_file(map->ctx, out);
-	printer = isl_printer_set_indent(printer, indent);
-	printer = isl_printer_set_output_format(printer, output_format);
-	printer = isl_printer_print_map(printer, map);
-
-	isl_printer_free(printer);
 }
 
 static int upoly_rec_n_non_zero(__isl_keep struct isl_upoly_rec *rec)
@@ -1818,7 +1752,7 @@ error:
 	return NULL;
 }
 
-static int print_pwqp_body(__isl_take isl_pw_qpolynomial *pwqp, void *user)
+static isl_stat print_pwqp_body(__isl_take isl_pw_qpolynomial *pwqp, void *user)
 {
 	struct isl_union_print_data *data;
 	data = (struct isl_union_print_data *)user;
@@ -1830,7 +1764,7 @@ static int print_pwqp_body(__isl_take isl_pw_qpolynomial *pwqp, void *user)
 	data->p = isl_pwqp_print_isl_body(data->p, pwqp);
 	isl_pw_qpolynomial_free(pwqp);
 
-	return 0;
+	return isl_stat_ok;
 }
 
 static __isl_give isl_printer *print_union_pw_qpolynomial_isl(
@@ -1961,7 +1895,8 @@ void isl_pw_qpolynomial_fold_print(__isl_keep isl_pw_qpolynomial_fold *pwf,
 	isl_printer_free(p);
 }
 
-static int print_pwf_body(__isl_take isl_pw_qpolynomial_fold *pwf, void *user)
+static isl_stat print_pwf_body(__isl_take isl_pw_qpolynomial_fold *pwf,
+	void *user)
 {
 	struct isl_union_print_data *data;
 	data = (struct isl_union_print_data *)user;
@@ -1973,7 +1908,7 @@ static int print_pwf_body(__isl_take isl_pw_qpolynomial_fold *pwf, void *user)
 	data->p = isl_pwf_print_isl_body(data->p, pwf);
 	isl_pw_qpolynomial_fold_free(pwf);
 
-	return 0;
+	return isl_stat_ok;
 }
 
 static __isl_give isl_printer *print_union_pw_qpolynomial_fold_isl(
@@ -2095,6 +2030,7 @@ __isl_give isl_printer *isl_printer_print_local_space(__isl_take isl_printer *p,
 		p = isl_printer_print_str(p, " : ");
 		p = isl_printer_print_str(p, s_open_exists[0]);
 		p = print_div_list(p, ls->dim, ls->div, 0);
+		p = isl_printer_print_str(p, s_close_exists[0]);
 	} else if (isl_space_is_params(ls->dim))
 		p = isl_printer_print_str(p, s_such_that[0]);
 	p = isl_printer_print_str(p, " }");
@@ -2370,7 +2306,7 @@ error:
  * If data->first = 1, then this is the first in the sequence.
  * Update data->first to tell the next element that it is not the first.
  */
-static int print_pw_aff_body_wrap(__isl_take isl_pw_aff *pa,
+static isl_stat print_pw_aff_body_wrap(__isl_take isl_pw_aff *pa,
 	void *user)
 {
 	struct isl_union_print_data *data;
@@ -2383,7 +2319,7 @@ static int print_pw_aff_body_wrap(__isl_take isl_pw_aff *pa,
 	data->p = print_pw_aff_body(data->p, pa);
 	isl_pw_aff_free(pa);
 
-	return data->p ? 0 : -1;
+	return data->p ? isl_stat_ok : isl_stat_error;
 }
 
 /* Print the body of an isl_union_pw_aff, i.e., a semicolon delimited
@@ -2614,7 +2550,7 @@ error:
 	return NULL;
 }
 
-static int print_pw_multi_aff_body_wrap(__isl_take isl_pw_multi_aff *pma,
+static isl_stat print_pw_multi_aff_body_wrap(__isl_take isl_pw_multi_aff *pma,
 	void *user)
 {
 	struct isl_union_print_data *data;
@@ -2627,7 +2563,7 @@ static int print_pw_multi_aff_body_wrap(__isl_take isl_pw_multi_aff *pma,
 	data->p = print_pw_multi_aff_body(data->p, pma);
 	isl_pw_multi_aff_free(pma);
 
-	return 0;
+	return isl_stat_ok;
 }
 
 static __isl_give isl_printer *print_union_pw_multi_aff_isl(

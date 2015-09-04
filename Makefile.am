@@ -11,8 +11,8 @@ lib_LTLIBRARIES = libisl.la
 noinst_PROGRAMS = isl_test isl_polyhedron_sample isl_pip \
 	isl_polyhedron_minimize isl_polytope_scan \
 	isl_polyhedron_detect_equalities isl_cat \
-	isl_closure isl_bound isl_codegen
-TESTS = isl_test codegen_test.sh pip_test.sh bound_test.sh
+	isl_closure isl_bound isl_codegen isl_test_int
+TESTS = isl_test codegen_test.sh pip_test.sh bound_test.sh isl_test_int
 
 if IMATH_FOR_MP
 
@@ -21,7 +21,6 @@ MP_SRC = \
 	isl_imath.c \
 	isl_imath.h \
 	isl_int_imath.h \
-	isl_val_imath.c \
 	imath_wrap/gmp_compat.h \
 	imath_wrap/imath.h \
 	imath_wrap/imrat.h \
@@ -29,6 +28,17 @@ MP_SRC = \
 	imath_wrap/gmp_compat.c \
 	imath_wrap/imath.c \
 	imath_wrap/imrat.c
+
+noinst_PROGRAMS += isl_test_imath
+TESTS += isl_test_imath
+
+if SMALL_INT_OPT
+MP_SRC += isl_int_sioimath.h \
+	isl_int_sioimath.c \
+	isl_val_sioimath.c
+else
+MP_SRC += isl_val_imath.c
+endif
 
 DEPRECATED_SRC =
 MP_INCLUDE_H =
@@ -85,7 +95,6 @@ libisl_la_SOURCES = \
 	isl_ctx.c \
 	isl_ctx_private.h \
 	isl_deprecated.c \
-	isl_dim.c \
 	isl_dim_map.h \
 	isl_dim_map.c \
 	isl_equalities.c \
@@ -93,9 +102,11 @@ libisl_la_SOURCES = \
 	isl_factorization.c \
 	isl_factorization.h \
 	isl_farkas.c \
+	isl_ffs.c \
 	isl_flow.c \
 	isl_fold.c \
 	isl_hash.c \
+	isl_hash_private.h \
 	isl_id_to_ast_expr.c \
 	isl_id_to_pw_aff.c \
 	isl_ilp.c \
@@ -179,6 +190,14 @@ libisl_la_LDFLAGS = -version-info @versioninfo@ \
 isl_test_LDFLAGS = @MP_LDFLAGS@
 isl_test_LDADD = libisl.la @MP_LIBS@
 
+isl_test_int_LDFLAGS = @MP_LDFLAGS@
+isl_test_int_LDADD = libisl.la @MP_LIBS@
+
+if IMATH_FOR_MP
+isl_test_imath_LDFLAGS = @MP_LDFLAGS@
+isl_test_imath_LDADD = libisl.la @MP_LIBS@
+endif
+
 isl_polyhedron_sample_LDADD = libisl.la
 isl_polyhedron_sample_SOURCES = \
 	polyhedron_sample.c
@@ -232,7 +251,6 @@ pkginclude_HEADERS = \
 	include/isl/band.h \
 	include/isl/constraint.h \
 	include/isl/ctx.h \
-	include/isl/dim.h \
 	include/isl/flow.h \
 	include/isl/id.h \
 	include/isl/id_to_ast_expr.h \
@@ -285,6 +303,18 @@ deprecated_HEADERS = \
 	include/isl/deprecated/val_int.h \
 	include/isl/deprecated/vec_int.h
 
+BUILT_SOURCES = gitversion.h
+
+CLEANFILES = \
+	gitversion.h
+
+DISTCLEANFILES = \
+	isl-uninstalled.sh \
+	isl-uninstalled.pc \
+	isl.pc \
+	isl.pc.in \
+	include/isl/stdint.h
+
 EXTRA_DIST = \
 	LICENSE \
 	isl_config_post.h \
@@ -299,14 +329,21 @@ EXTRA_DIST = \
 	isl_multi_apply_templ.c \
 	isl_multi_apply_set.c \
 	isl_multi_apply_union_set.c \
+	isl_multi_coalesce.c \
 	isl_multi_floor.c \
 	isl_multi_gist.c \
 	isl_multi_intersect.c \
 	print_templ.c \
 	isl_power_templ.c \
 	isl_pw_templ.c \
+	isl_union_macro.h \
 	isl_union_templ.c \
+	isl_union_single.c \
+	isl_union_multi.c \
+	isl_union_eval.c \
+	isl_union_neg.c \
 	isl.py \
+	doc/CodingStyle \
 	doc/SubmittingPatches \
 	doc/chicago.bst \
 	doc/chicago.sty \
@@ -345,3 +382,10 @@ install-data-local: $(srcdir)/isl.py
 		$(DESTDIR)$(libdir)/$$libisl-gdb.py; \
 	test -z "$(libdir)" || $(MKDIR_P) "$(DESTDIR)$(libdir)"; \
 	$(INSTALL_DATA) $(srcdir)/isl.py $(DESTDIR)$(libdir)/$$libisl-gdb.py; esac
+
+uninstall-local:
+	@libisl=`sed -ne "/^library_names=/{s/.*='//;s/'$$//;s/ .*//;p;}" \
+		 $(builddir)/libisl.la`; \
+	if test -n "$${libisl}"; then \
+		rm -f $(DESTDIR)$(libdir)/$$libisl-gdb.py; \
+	fi
