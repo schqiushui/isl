@@ -2728,6 +2728,10 @@ then this space also needs to be a set space.
 	__isl_give isl_multi_aff *isl_multi_aff_from_aff_list(
 		__isl_take isl_space *space,
 		__isl_take isl_aff_list *list);
+	__isl_give isl_multi_pw_aff *
+	isl_multi_pw_aff_from_pw_aff_list(
+		__isl_take isl_space *space,
+		__isl_take isl_pw_aff_list *list);
 	__isl_give isl_multi_union_pw_aff *
 	isl_multi_union_pw_aff_from_union_pw_aff_list(
 		__isl_take isl_space *space,
@@ -3889,12 +3893,22 @@ i.e., whether both domain and range are nested relations.
 
 =item * Currying
 
+	#include <isl/space.h>
+	isl_bool isl_space_can_curry(
+		__isl_keep isl_space *space);
+
+	#include <isl/map.h>
 	isl_bool isl_basic_map_can_curry(
 		__isl_keep isl_basic_map *bmap);
 	isl_bool isl_map_can_curry(__isl_keep isl_map *map);
 
 Check whether the domain of the (basic) relation is a wrapped relation.
 
+	#include <isl/space.h>
+	__isl_give isl_space *isl_space_uncurry(
+		__isl_take isl_space *space);
+
+	#include <isl/map.h>
 	isl_bool isl_basic_map_can_uncurry(
 		__isl_keep isl_basic_map *bmap);
 	isl_bool isl_map_can_uncurry(__isl_keep isl_map *map);
@@ -4332,10 +4346,11 @@ on a given parameter domain using the following functions.
 	__isl_give isl_set *isl_set_from_params(
 		__isl_take isl_set *set);
 
-=item * Constructing a relation from a set
+=item * Constructing a relation from one or two sets
 
-Create a relation with the given set as domain or range.
-The range or domain of the created relation is a zero-dimensional
+Create a relation with the given set(s) as domain and/or range.
+If only the domain or the range is specified, then
+the range or domain of the created relation is a zero-dimensional
 flat anonymous space.
 
 	#include <isl/space.h>
@@ -4358,6 +4373,12 @@ flat anonymous space.
 		__isl_take isl_set *set);
 	__isl_give isl_map *isl_map_from_range(
 		__isl_take isl_set *set);
+
+	#include <isl/union_map.h>
+	__isl_give isl_union_map *
+	isl_union_map_from_domain_and_range(
+		__isl_take isl_union_set *domain,
+		__isl_take isl_union_set *range);
 
 	#include <isl/val.h>
 	__isl_give isl_multi_val *isl_multi_val_from_range(
