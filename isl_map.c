@@ -322,6 +322,38 @@ __isl_give isl_local_space *isl_basic_set_get_local_space(
 	return isl_basic_map_get_local_space(bset);
 }
 
+/* For each known div d = floor(f/m), add the constraints
+ *
+ *		f - m d >= 0
+ *		-(f-(n-1)) + m d >= 0
+ *
+ * Do not finalize the result.
+ */
+static __isl_give isl_basic_map *add_known_div_constraints(
+	__isl_take isl_basic_map *bmap)
+{
+	int i;
+	unsigned n_div;
+
+	if (!bmap)
+		return NULL;
+	n_div = isl_basic_map_dim(bmap, isl_dim_div);
+	if (n_div == 0)
+		return bmap;
+	bmap = isl_basic_map_cow(bmap);
+	bmap = isl_basic_map_extend_constraints(bmap, 0, 2 * n_div);
+	if (!bmap)
+		return NULL;
+	for (i = 0; i < n_div; ++i) {
+		if (isl_int_is_zero(bmap->div[i][0]))
+			continue;
+		if (isl_basic_map_add_div_constraints(bmap, i) < 0)
+			return isl_basic_map_free(bmap);
+	}
+
+	return bmap;
+}
+
 __isl_give isl_basic_map *isl_basic_map_from_local_space(
 	__isl_take isl_local_space *ls)
 {
@@ -340,11 +372,9 @@ __isl_give isl_basic_map *isl_basic_map_from_local_space(
 		if (isl_basic_map_alloc_div(bmap) < 0)
 			goto error;
 
-	for (i = 0; i < n_div; ++i) {
+	for (i = 0; i < n_div; ++i)
 		isl_seq_cpy(bmap->div[i], ls->div->row[i], ls->div->n_col);
-		if (isl_basic_map_add_div_constraints(bmap, i) < 0)
-			goto error;
-	}
+	bmap = add_known_div_constraints(bmap);
 					
 	isl_local_space_free(ls);
 	return bmap;
@@ -4441,11 +4471,13 @@ int isl_basic_map_add_div_constraints(struct isl_basic_map *bmap, unsigned div)
  *
  *		f - m d >= 0
  *		-(f-(n-1)) + m d >= 0
+ *
+ * Remove duplicate constraints in case of some these div constraints
+ * already appear in "bmap".
  */
 __isl_give isl_basic_map *isl_basic_map_add_known_div_constraints(
 	__isl_take isl_basic_map *bmap)
 {
-	int i;
 	unsigned n_div;
 
 	if (!bmap)
@@ -4453,17 +4485,8 @@ __isl_give isl_basic_map *isl_basic_map_add_known_div_constraints(
 	n_div = isl_basic_map_dim(bmap, isl_dim_div);
 	if (n_div == 0)
 		return bmap;
-	bmap = isl_basic_map_cow(bmap);
-	bmap = isl_basic_map_extend_constraints(bmap, 0, 2 * n_div);
-	if (!bmap)
-		return NULL;
-	for (i = 0; i < n_div; ++i) {
-		if (isl_int_is_zero(bmap->div[i][0]))
-			continue;
-		if (isl_basic_map_add_div_constraints(bmap, i) < 0)
-			return isl_basic_map_free(bmap);
-	}
 
+	bmap = add_known_div_constraints(bmap);
 	bmap = isl_basic_map_remove_duplicate_constraints(bmap, NULL, 0);
 	bmap = isl_basic_map_finalize(bmap);
 	return bmap;
@@ -10582,6 +10605,35 @@ isl_bool isl_set_is_wrapping(__isl_keep isl_set *set)
 	return isl_space_is_wrapping(set->dim);
 }
 
+/* Modify the space of "map" through a call to "change".
+ * If "can_change" is set (not NULL), then first call it to check
+ * if the modification is allowed, printing the error message "cannot_change"
+ * if it is not.
+ */
+static __isl_give isl_map *isl_map_change_space(__isl_take isl_map *map,
+	isl_bool (*can_change)(__isl_keep isl_map *map),
+	const char *cannot_change,
+	__isl_give isl_space *(*change)(__isl_take isl_space *space))
+{
+	isl_bool ok;
+	isl_space *space;
+
+	if (!map)
+		return NULL;
+
+	ok = can_change ? can_change(map) : isl_bool_true;
+	if (ok < 0)
+		return isl_map_free(map);
+	if (!ok)
+		isl_die(isl_map_get_ctx(map), isl_error_invalid, cannot_change,
+			return isl_map_free(map));
+
+	space = change(isl_map_get_space(map));
+	map = isl_map_reset_space(map, space);
+
+	return map;
+}
+
 /* Is the domain of "map" a wrapped relation?
  */
 isl_bool isl_map_domain_is_wrapping(__isl_keep isl_map *map)
@@ -10620,27 +10672,11 @@ error:
 	return NULL;
 }
 
+/* Given a map A -> B, return the set (A -> B).
+ */
 __isl_give isl_set *isl_map_wrap(__isl_take isl_map *map)
 {
-	int i;
-
-	map = isl_map_cow(map);
-	if (!map)
-		return NULL;
-
-	for (i = 0; i < map->n; ++i) {
-		map->p[i] = (isl_basic_map *)isl_basic_map_wrap(map->p[i]);
-		if (!map->p[i])
-			goto error;
-	}
-	map->dim = isl_space_wrap(map->dim);
-	if (!map->dim)
-		goto error;
-
-	return (isl_set *)map;
-error:
-	isl_map_free(map);
-	return NULL;
+	return isl_map_change_space(map, NULL, NULL, &isl_space_wrap);
 }
 
 __isl_give isl_basic_map *isl_basic_set_unwrap(__isl_take isl_basic_set *bset)
@@ -10661,35 +10697,13 @@ error:
 	return NULL;
 }
 
+/* Given a set (A -> B), return the map A -> B.
+ * Error out if "set" is not of the form (A -> B).
+ */
 __isl_give isl_map *isl_set_unwrap(__isl_take isl_set *set)
 {
-	int i;
-
-	if (!set)
-		return NULL;
-
-	if (!isl_set_is_wrapping(set))
-		isl_die(set->ctx, isl_error_invalid, "not a wrapping set",
-			goto error);
-
-	set = isl_set_cow(set);
-	if (!set)
-		return NULL;
-
-	for (i = 0; i < set->n; ++i) {
-		set->p[i] = (isl_basic_set *)isl_basic_set_unwrap(set->p[i]);
-		if (!set->p[i])
-			goto error;
-	}
-
-	set->dim = isl_space_unwrap(set->dim);
-	if (!set->dim)
-		goto error;
-
-	return (isl_map *)set;
-error:
-	isl_set_free(set);
-	return NULL;
+	return isl_map_change_space(set, &isl_set_is_wrapping,
+				    "not a wrapping set", &isl_space_unwrap);
 }
 
 __isl_give isl_basic_map *isl_basic_map_reset(__isl_take isl_basic_map *bmap,
@@ -10826,33 +10840,17 @@ error:
 	return NULL;
 }
 
+/* Remove any internal structure from the spaces of domain and range of "map".
+ */
 __isl_give isl_map *isl_map_flatten(__isl_take isl_map *map)
 {
-	int i;
-
 	if (!map)
 		return NULL;
 
 	if (!map->dim->nested[0] && !map->dim->nested[1])
 		return map;
 
-	map = isl_map_cow(map);
-	if (!map)
-		return NULL;
-
-	for (i = 0; i < map->n; ++i) {
-		map->p[i] = isl_basic_map_flatten(map->p[i]);
-		if (!map->p[i])
-			goto error;
-	}
-	map->dim = isl_space_flatten(map->dim);
-	if (!map->dim)
-		goto error;
-
-	return map;
-error:
-	isl_map_free(map);
-	return NULL;
+	return isl_map_change_space(map, NULL, NULL, &isl_space_flatten);
 }
 
 __isl_give isl_set *isl_set_flatten(__isl_take isl_set *set)
@@ -10873,62 +10871,30 @@ __isl_give isl_map *isl_set_flatten_map(__isl_take isl_set *set)
 	return map;
 }
 
+/* Remove any internal structure from the space of the domain of "map".
+ */
 __isl_give isl_map *isl_map_flatten_domain(__isl_take isl_map *map)
 {
-	int i;
-
 	if (!map)
 		return NULL;
 
 	if (!map->dim->nested[0])
 		return map;
 
-	map = isl_map_cow(map);
-	if (!map)
-		return NULL;
-
-	for (i = 0; i < map->n; ++i) {
-		map->p[i] = isl_basic_map_flatten_domain(map->p[i]);
-		if (!map->p[i])
-			goto error;
-	}
-	map->dim = isl_space_flatten_domain(map->dim);
-	if (!map->dim)
-		goto error;
-
-	return map;
-error:
-	isl_map_free(map);
-	return NULL;
+	return isl_map_change_space(map, NULL, NULL, &isl_space_flatten_domain);
 }
 
+/* Remove any internal structure from the space of the range of "map".
+ */
 __isl_give isl_map *isl_map_flatten_range(__isl_take isl_map *map)
 {
-	int i;
-
 	if (!map)
 		return NULL;
 
 	if (!map->dim->nested[1])
 		return map;
 
-	map = isl_map_cow(map);
-	if (!map)
-		return NULL;
-
-	for (i = 0; i < map->n; ++i) {
-		map->p[i] = isl_basic_map_flatten_range(map->p[i]);
-		if (!map->p[i])
-			goto error;
-	}
-	map->dim = isl_space_flatten_range(map->dim);
-	if (!map->dim)
-		goto error;
-
-	return map;
-error:
-	isl_map_free(map);
-	return NULL;
+	return isl_map_change_space(map, NULL, NULL, &isl_space_flatten_range);
 }
 
 /* Reorder the dimensions of "bmap" according to the given dim_map
@@ -11305,6 +11271,7 @@ __isl_give isl_basic_map *isl_basic_map_zip(__isl_take isl_basic_map *bmap)
 	bmap->dim = isl_space_zip(bmap->dim);
 	if (!bmap->dim)
 		goto error;
+	bmap = isl_basic_map_mark_final(bmap);
 	return bmap;
 error:
 	isl_basic_map_free(bmap);
@@ -11385,6 +11352,7 @@ __isl_give isl_basic_map *isl_basic_map_curry(__isl_take isl_basic_map *bmap)
 	bmap->dim = isl_space_curry(bmap->dim);
 	if (!bmap->dim)
 		goto error;
+	bmap = isl_basic_map_mark_final(bmap);
 	return bmap;
 error:
 	isl_basic_map_free(bmap);
@@ -11396,33 +11364,30 @@ error:
  */
 __isl_give isl_map *isl_map_curry(__isl_take isl_map *map)
 {
-	int i;
+	return isl_map_change_space(map, &isl_map_can_curry,
+				    "map cannot be curried", &isl_space_curry);
+}
 
+/* Can isl_map_range_curry be applied to "map"?
+ * That is, does it have a nested relation in its range,
+ * the domain of which is itself a nested relation?
+ */
+isl_bool isl_map_can_range_curry(__isl_keep isl_map *map)
+{
 	if (!map)
-		return NULL;
+		return isl_bool_error;
 
-	if (!isl_map_can_curry(map))
-		isl_die(map->ctx, isl_error_invalid, "map cannot be curried",
-			goto error);
+	return isl_space_can_range_curry(map->dim);
+}
 
-	map = isl_map_cow(map);
-	if (!map)
-		return NULL;
-
-	for (i = 0; i < map->n; ++i) {
-		map->p[i] = isl_basic_map_curry(map->p[i]);
-		if (!map->p[i])
-			goto error;
-	}
-
-	map->dim = isl_space_curry(map->dim);
-	if (!map->dim)
-		goto error;
-
-	return map;
-error:
-	isl_map_free(map);
-	return NULL;
+/* Given a map A -> ((B -> C) -> D), return the corresponding map
+ * A -> (B -> (C -> D)).
+ */
+__isl_give isl_map *isl_map_range_curry(__isl_take isl_map *map)
+{
+	return isl_map_change_space(map, &isl_map_can_range_curry,
+				    "map range cannot be curried",
+				    &isl_space_range_curry);
 }
 
 /* Can we apply isl_basic_map_uncurry to "bmap"?
@@ -11466,6 +11431,7 @@ __isl_give isl_basic_map *isl_basic_map_uncurry(__isl_take isl_basic_map *bmap)
 	bmap->dim = isl_space_uncurry(bmap->dim);
 	if (!bmap->dim)
 		return isl_basic_map_free(bmap);
+	bmap = isl_basic_map_mark_final(bmap);
 	return bmap;
 }
 
@@ -11474,30 +11440,8 @@ __isl_give isl_basic_map *isl_basic_map_uncurry(__isl_take isl_basic_map *bmap)
  */
 __isl_give isl_map *isl_map_uncurry(__isl_take isl_map *map)
 {
-	int i;
-
-	if (!map)
-		return NULL;
-
-	if (!isl_map_can_uncurry(map))
-		isl_die(map->ctx, isl_error_invalid, "map cannot be uncurried",
-			return isl_map_free(map));
-
-	map = isl_map_cow(map);
-	if (!map)
-		return NULL;
-
-	for (i = 0; i < map->n; ++i) {
-		map->p[i] = isl_basic_map_uncurry(map->p[i]);
-		if (!map->p[i])
-			return isl_map_free(map);
-	}
-
-	map->dim = isl_space_uncurry(map->dim);
-	if (!map->dim)
-		return isl_map_free(map);
-
-	return map;
+	return isl_map_change_space(map, &isl_map_can_uncurry,
+				"map cannot be uncurried", &isl_space_uncurry);
 }
 
 /* Construct a basic map mapping the domain of the affine expression

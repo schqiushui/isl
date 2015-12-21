@@ -2329,6 +2329,8 @@ A singleton set can be created from a point using
 		__isl_take isl_point *pnt);
 	__isl_give isl_set *isl_set_from_point(
 		__isl_take isl_point *pnt);
+	__isl_give isl_union_set *isl_union_set_from_point(
+		__isl_take isl_point *pnt);
 
 and a box can be created from two opposite extremal points using
 
@@ -2361,12 +2363,14 @@ enumerating and return C<-1> as well.
 If the enumeration is performed successfully and to completion,
 then C<isl_set_foreach_point> returns C<0>.
 
-To obtain a single point of a (basic) set, use
+To obtain a single point of a (basic or union) set, use
 
 	__isl_give isl_point *isl_basic_set_sample_point(
 		__isl_take isl_basic_set *bset);
 	__isl_give isl_point *isl_set_sample_point(
 		__isl_take isl_set *set);
+	__isl_give isl_point *isl_union_set_sample_point(
+		__isl_take isl_union_set *uset);
 
 If C<set> does not contain any (integer) points, then the
 resulting point will be ``void'', a property that can be
@@ -3410,6 +3414,9 @@ Objects can be read from input using the following functions.
 		isl_ctx *ctx, const char *str);
 	__isl_give isl_multi_pw_aff *isl_multi_pw_aff_read_from_str(
 		isl_ctx *ctx, const char *str);
+	__isl_give isl_union_pw_aff *
+	isl_union_pw_aff_read_from_str(
+		isl_ctx *ctx, const char *str);
 	__isl_give isl_union_pw_multi_aff *
 	isl_union_pw_multi_aff_read_from_str(
 		isl_ctx *ctx, const char *str);
@@ -3914,6 +3921,17 @@ Check whether the domain of the (basic) relation is a wrapped relation.
 	isl_bool isl_map_can_uncurry(__isl_keep isl_map *map);
 
 Check whether the range of the (basic) relation is a wrapped relation.
+
+	#include <isl/space.h>
+	isl_bool isl_space_can_range_curry(
+		__isl_keep isl_space *space);
+
+	#include <isl/map.h>
+	isl_bool isl_map_can_range_curry(
+		__isl_keep isl_map *map);
+
+Check whether the domain of the relation wrapped in the range of
+the input is itself a wrapped relation.
 
 =item * Special Values
 
@@ -5167,6 +5185,21 @@ and use it as the domain of a nested relation in the range,
 with the original range as range of this nested relation.
 The C<uncurry> functions perform the inverse operation.
 
+	#include <isl/space.h>
+	__isl_give isl_space *isl_space_range_curry(
+		__isl_take isl_space *space);
+
+	#include <isl/map.h>
+	__isl_give isl_map *isl_map_range_curry(
+		__isl_take isl_map *map);
+
+	#include <isl/union_map.h>
+	__isl_give isl_union_map *isl_union_map_range_curry(
+		__isl_take isl_union_map *umap);
+
+These functions apply the currying to the relation that
+is nested inside the range of the input.
+
 =item * Aligning parameters
 
 Change the order of the parameters of the given set, relation
@@ -6341,6 +6374,9 @@ from the result using the following functions.
 		__isl_take isl_union_map *umap);
 	__isl_give isl_union_map *
 	isl_union_map_domain_factor_range(
+		__isl_take isl_union_map *umap);
+	__isl_give isl_union_map *
+	isl_union_map_range_factor_domain(
 		__isl_take isl_union_map *umap);
 	__isl_give isl_union_map *
 	isl_union_map_range_factor_range(
@@ -8358,7 +8394,8 @@ of which of the source access relations was the last
 to access the same data element before the given iteration
 of the sink access.
 The resulting dependence relations map source iterations
-to the corresponding sink iterations.
+to either the corresponding sink iterations or
+pairs of corresponding sink iterations and accessed data elements.
 To compute standard flow dependences, the sink should be
 a read, while the sources should be writes.
 If any of the source accesses are marked as being I<may>
@@ -8439,6 +8476,12 @@ and freed using the following functions.
 		__isl_keep isl_union_flow *flow);
 	__isl_give isl_union_map *isl_union_flow_get_may_dependence(
 		__isl_keep isl_union_flow *flow);
+	__isl_give isl_union_map *
+	isl_union_flow_get_full_must_dependence(
+		__isl_keep isl_union_flow *flow);
+	__isl_give isl_union_map *
+	isl_union_flow_get_full_may_dependence(
+		__isl_keep isl_union_flow *flow);
 	__isl_give isl_union_map *isl_union_flow_get_must_no_source(
 		__isl_keep isl_union_flow *flow);
 	__isl_give isl_union_map *isl_union_flow_get_may_no_source(
@@ -8451,6 +8494,13 @@ relates domain elements of must sources to domain elements of the sink.
 The relation returned by C<isl_union_flow_get_may_dependence>
 relates domain elements of must or may sources to domain elements of the sink
 and includes the previous relation as a subset.
+The relation returned by C<isl_union_flow_get_full_must_dependence>
+relates domain elements of must sources to pairs of domain elements of the sink
+and accessed data elements.
+The relation returned by C<isl_union_flow_get_full_may_dependence>
+relates domain elements of must or may sources to pairs of
+domain elements of the sink and accessed data elements.
+This relation includes the previous relation as a subset.
 The relation returned by C<isl_union_flow_get_must_no_source> is the subset
 of the sink relation for which no dependences have been found.
 The relation returned by C<isl_union_flow_get_may_no_source> is the subset
