@@ -1085,13 +1085,14 @@ static __isl_give isl_flow *access_info_compute_flow_core(
 		acc = isl_access_info_sort_sources(acc);
 		res = compute_val_based_dependences(acc);
 	}
-	isl_access_info_free(acc);
+	acc = isl_access_info_free(acc);
 	if (!res)
 		return NULL;
 	if (!res->must_no_source || !res->may_no_source)
 		goto error;
 	return res;
 error:
+	isl_access_info_free(acc);
 	isl_flow_free(res);
 	return NULL;
 }
@@ -1123,6 +1124,8 @@ __isl_give isl_flow *isl_access_info_compute_flow(__isl_take isl_access_info *ac
 
 	acc->domain_map = isl_map_domain_map(isl_map_copy(acc->sink.map));
 	res = access_info_compute_flow_core(acc);
+	if (!res)
+		return NULL;
 
 	for (j = 0; j < res->n_source; ++j) {
 		res->dep[j].map = isl_map_range_factor_domain(res->dep[j].map);
@@ -1398,6 +1401,70 @@ __isl_give isl_union_access_info *isl_union_access_info_copy(
 				isl_union_map_copy(access->schedule_map));
 
 	return copy;
+}
+
+/* Print a key-value pair of a YAML mapping to "p",
+ * with key "name" and value "umap".
+ */
+static __isl_give isl_printer *print_union_map_field(__isl_take isl_printer *p,
+	const char *name, __isl_keep isl_union_map *umap)
+{
+	p = isl_printer_print_str(p, name);
+	p = isl_printer_yaml_next(p);
+	p = isl_printer_print_str(p, "\"");
+	p = isl_printer_print_union_map(p, umap);
+	p = isl_printer_print_str(p, "\"");
+	p = isl_printer_yaml_next(p);
+
+	return p;
+}
+
+/* Print the information contained in "access" to "p".
+ * The information is printed as a YAML document.
+ */
+__isl_give isl_printer *isl_printer_print_union_access_info(
+	__isl_take isl_printer *p, __isl_keep isl_union_access_info *access)
+{
+	if (!access)
+		return isl_printer_free(p);
+
+	p = isl_printer_yaml_start_mapping(p);
+	p = print_union_map_field(p, "sink", access->sink);
+	p = print_union_map_field(p, "must_source", access->must_source);
+	p = print_union_map_field(p, "may_source", access->may_source);
+	if (access->schedule) {
+		p = isl_printer_print_str(p, "schedule");
+		p = isl_printer_yaml_next(p);
+		p = isl_printer_print_schedule(p, access->schedule);
+		p = isl_printer_yaml_next(p);
+	} else {
+		p = print_union_map_field(p, "schedule_map",
+						access->schedule_map);
+	}
+	p = isl_printer_yaml_end_mapping(p);
+
+	return p;
+}
+
+/* Return a string representation of the information in "access".
+ * The information is printed in flow format.
+ */
+__isl_give char *isl_union_access_info_to_str(
+	__isl_keep isl_union_access_info *access)
+{
+	isl_printer *p;
+	char *s;
+
+	if (!access)
+		return NULL;
+
+	p = isl_printer_to_str(isl_union_access_info_get_ctx(access));
+	p = isl_printer_set_yaml_style(p, ISL_YAML_STYLE_FLOW);
+	p = isl_printer_print_union_access_info(p, access);
+	s = isl_printer_get_str(p);
+	isl_printer_free(p);
+
+	return s;
 }
 
 /* Update the fields of "access" such that they all have the same parameters,
@@ -2464,6 +2531,51 @@ __isl_give isl_union_flow *isl_union_access_info_compute_flow(
 		return compute_flow_schedule(access);
 	else
 		return compute_flow_union_map(access);
+}
+
+/* Print the information contained in "flow" to "p".
+ * The information is printed as a YAML document.
+ */
+__isl_give isl_printer *isl_printer_print_union_flow(
+	__isl_take isl_printer *p, __isl_keep isl_union_flow *flow)
+{
+	isl_union_map *umap;
+
+	if (!flow)
+		return isl_printer_free(p);
+
+	p = isl_printer_yaml_start_mapping(p);
+	p = print_union_map_field(p, "must_dependence", flow->must_dep);
+	umap = isl_union_flow_get_may_dependence(flow);
+	p = print_union_map_field(p, "may_dependence", umap);
+	isl_union_map_free(umap);
+	p = print_union_map_field(p, "must_no_source", flow->must_no_source);
+	umap = isl_union_flow_get_may_no_source(flow);
+	p = print_union_map_field(p, "may_no_source", umap);
+	isl_union_map_free(umap);
+	p = isl_printer_yaml_end_mapping(p);
+
+	return p;
+}
+
+/* Return a string representation of the information in "flow".
+ * The information is printed in flow format.
+ */
+__isl_give char *isl_union_flow_to_str(__isl_keep isl_union_flow *flow)
+{
+	isl_printer *p;
+	char *s;
+
+	if (!flow)
+		return NULL;
+
+	p = isl_printer_to_str(isl_union_flow_get_ctx(flow));
+	p = isl_printer_set_yaml_style(p, ISL_YAML_STYLE_FLOW);
+	p = isl_printer_print_union_flow(p, flow);
+	s = isl_printer_get_str(p);
+	isl_printer_free(p);
+
+	return s;
 }
 
 /* Given a collection of "sink" and "source" accesses,

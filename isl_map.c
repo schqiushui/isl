@@ -6909,30 +6909,47 @@ error:
 	return NULL;
 }
 
-int isl_basic_map_divs_known(__isl_keep isl_basic_map *bmap)
+/* Does local variable "div" of "bmap" have an explicit representation?
+ */
+isl_bool isl_basic_map_div_is_known(__isl_keep isl_basic_map *bmap, int div)
+{
+	if (!bmap)
+		return isl_bool_error;
+	if (div < 0 || div >= isl_basic_map_dim(bmap, isl_dim_div))
+		isl_die(isl_basic_map_get_ctx(bmap), isl_error_invalid,
+			"position out of bounds", return isl_bool_error);
+	return !isl_int_is_zero(bmap->div[div][0]);
+}
+
+/* Does "bmap" have an explicit representation for all local variables?
+ */
+isl_bool isl_basic_map_divs_known(__isl_keep isl_basic_map *bmap)
 {
 	int i;
 	unsigned off;
 
 	if (!bmap)
-		return -1;
+		return isl_bool_error;
 
 	off = isl_space_dim(bmap->dim, isl_dim_all);
 	for (i = 0; i < bmap->n_div; ++i) {
-		if (isl_int_is_zero(bmap->div[i][0]))
-			return 0;
+		if (!isl_basic_map_div_is_known(bmap, i))
+			return isl_bool_false;
 		isl_assert(bmap->ctx, isl_int_is_zero(bmap->div[i][1+1+off+i]),
-				return -1);
+				return isl_bool_error);
 	}
-	return 1;
+	return isl_bool_true;
 }
 
-static int map_divs_known(__isl_keep isl_map *map)
+/* Do all basic maps in "map" have an explicit representation
+ * for all local variables?
+ */
+isl_bool isl_map_divs_known(__isl_keep isl_map *map)
 {
 	int i;
 
 	if (!map)
-		return -1;
+		return isl_bool_error;
 
 	for (i = 0; i < map->n; ++i) {
 		int known = isl_basic_map_divs_known(map->p[i]);
@@ -6940,7 +6957,7 @@ static int map_divs_known(__isl_keep isl_map *map)
 			return known;
 	}
 
-	return 1;
+	return isl_bool_true;
 }
 
 /* If bmap contains any unknown divs, then compute explicit
@@ -6985,7 +7002,7 @@ struct isl_map *isl_map_compute_divs(struct isl_map *map)
 	if (map->n == 0)
 		return map;
 
-	known = map_divs_known(map);
+	known = isl_map_divs_known(map);
 	if (known < 0) {
 		isl_map_free(map);
 		return NULL;
@@ -8812,8 +8829,23 @@ int isl_set_plain_dim_has_fixed_lower_bound(__isl_keep isl_set *set,
 	return fixed;
 }
 
-/* uset_gist depends on constraints without existentially quantified
+/* Return -1 if the constraint "c1" should be sorted before "c2"
+ * and 1 if it should be sorted after "c2".
+ * Return 0 if the two constraints are the same (up to the constant term).
+ *
+ * In particular, if a constraint involves later variables than another
+ * then it is sorted after this other constraint.
+ * uset_gist depends on constraints without existentially quantified
  * variables sorting first.
+ *
+ * For constraints that have the same latest variable, those
+ * with the same coefficient for this latest variable (first in absolute value
+ * and then in actual value) are grouped together.
+ * This is useful for detecting pairs of constraints that can
+ * be chained in their printed representation.
+ *
+ * Finally, within a group, constraints are sorted according to
+ * their coefficients (excluding the constant term).
  */
 static int sort_constraint_cmp(const void *p1, const void *p2, void *arg)
 {
@@ -8821,6 +8853,7 @@ static int sort_constraint_cmp(const void *p1, const void *p2, void *arg)
 	isl_int **c2 = (isl_int **) p2;
 	int l1, l2;
 	unsigned size = *(unsigned *) arg;
+	int cmp;
 
 	l1 = isl_seq_last_non_zero(*c1 + 1, size);
 	l2 = isl_seq_last_non_zero(*c2 + 1, size);
@@ -8828,11 +8861,33 @@ static int sort_constraint_cmp(const void *p1, const void *p2, void *arg)
 	if (l1 != l2)
 		return l1 - l2;
 
+	cmp = isl_int_abs_cmp((*c1)[1 + l1], (*c2)[1 + l1]);
+	if (cmp != 0)
+		return cmp;
+	cmp = isl_int_cmp((*c1)[1 + l1], (*c2)[1 + l1]);
+	if (cmp != 0)
+		return -cmp;
+
 	return isl_seq_cmp(*c1 + 1, *c2 + 1, size);
 }
 
-static struct isl_basic_map *isl_basic_map_sort_constraints(
-	struct isl_basic_map *bmap)
+/* Return -1 if the constraint "c1" of "bmap" is sorted before "c2"
+ * by isl_basic_map_sort_constraints, 1 if it is sorted after "c2"
+ * and 0 if the two constraints are the same (up to the constant term).
+ */
+int isl_basic_map_constraint_cmp(__isl_keep isl_basic_map *bmap,
+	isl_int *c1, isl_int *c2)
+{
+	unsigned total;
+
+	if (!bmap)
+		return -2;
+	total = isl_basic_map_total_dim(bmap);
+	return sort_constraint_cmp(&c1, &c2, &total);
+}
+
+__isl_give isl_basic_map *isl_basic_map_sort_constraints(
+	__isl_take isl_basic_map *bmap)
 {
 	unsigned total;
 
@@ -10325,18 +10380,126 @@ static int div_may_involve_output(__isl_keep isl_basic_map *bmap, int div)
 	return 0;
 }
 
+/* Return the first integer division of "bmap" in the range
+ * [first, first + n[ that may depend on any output dimensions and
+ * that has a non-zero coefficient in "c" (where the first coefficient
+ * in "c" corresponds to integer division "first").
+ */
+static int first_div_may_involve_output(__isl_keep isl_basic_map *bmap,
+	isl_int *c, int first, int n)
+{
+	int k;
+
+	if (!bmap)
+		return -1;
+
+	for (k = first; k < first + n; ++k) {
+		if (isl_int_is_zero(c[k]))
+			continue;
+		if (div_may_involve_output(bmap, k))
+			return k;
+	}
+
+	return first + n;
+}
+
+/* Look for a pair of inequality constraints in "bmap" of the form
+ *
+ *	-l + i >= 0		or		i >= l
+ * and
+ *	n + l - i >= 0		or		i <= l + n
+ *
+ * with n < "m" and i the output dimension at position "pos".
+ * (Note that n >= 0 as otherwise the two constraints would conflict.)
+ * Furthermore, "l" is only allowed to involve parameters, input dimensions
+ * and earlier output dimensions, as well as integer divisions that do
+ * not involve any of the output dimensions.
+ *
+ * Return the index of the first inequality constraint or bmap->n_ineq
+ * if no such pair can be found.
+ */
+static int find_modulo_constraint_pair(__isl_keep isl_basic_map *bmap,
+	int pos, isl_int m)
+{
+	int i, j;
+	isl_ctx *ctx;
+	unsigned total;
+	unsigned n_div, o_div;
+	unsigned n_out, o_out;
+	int less;
+
+	if (!bmap)
+		return -1;
+
+	ctx = isl_basic_map_get_ctx(bmap);
+	total = isl_basic_map_total_dim(bmap);
+	n_out = isl_basic_map_dim(bmap, isl_dim_out);
+	o_out = isl_basic_map_offset(bmap, isl_dim_out);
+	n_div = isl_basic_map_dim(bmap, isl_dim_div);
+	o_div = isl_basic_map_offset(bmap, isl_dim_div);
+	for (i = 0; i < bmap->n_ineq; ++i) {
+		if (!isl_int_abs_eq(bmap->ineq[i][o_out + pos], ctx->one))
+			continue;
+		if (isl_seq_first_non_zero(bmap->ineq[i] + o_out + pos + 1,
+					n_out - (pos + 1)) != -1)
+			continue;
+		if (first_div_may_involve_output(bmap, bmap->ineq[i] + o_div,
+						0, n_div) < n_div)
+			continue;
+		for (j = i + 1; j < bmap->n_ineq; ++j) {
+			if (!isl_int_abs_eq(bmap->ineq[j][o_out + pos],
+					    ctx->one))
+				continue;
+			if (!isl_seq_is_neg(bmap->ineq[i] + 1,
+					    bmap->ineq[j] + 1, total))
+				continue;
+			break;
+		}
+		if (j >= bmap->n_ineq)
+			continue;
+		isl_int_add(bmap->ineq[i][0],
+			    bmap->ineq[i][0], bmap->ineq[j][0]);
+		less = isl_int_abs_lt(bmap->ineq[i][0], m);
+		isl_int_sub(bmap->ineq[i][0],
+			    bmap->ineq[i][0], bmap->ineq[j][0]);
+		if (!less)
+			continue;
+		if (isl_int_is_one(bmap->ineq[i][o_out + pos]))
+			return i;
+		else
+			return j;
+	}
+
+	return bmap->n_ineq;
+}
+
 /* Return the index of the equality of "bmap" that defines
  * the output dimension "pos" in terms of earlier dimensions.
  * The equality may also involve integer divisions, as long
  * as those integer divisions are defined in terms of
  * parameters or input dimensions.
+ * In this case, *div is set to the number of integer divisions and
+ * *ineq is set to the number of inequality constraints (provided
+ * div and ineq are not NULL).
+ *
+ * The equality may also involve a single integer division involving
+ * the output dimensions (typically only output dimension "pos") as
+ * long as the coefficient of output dimension "pos" is 1 or -1 and
+ * there is a pair of constraints i >= l and i <= l + n, with i referring
+ * to output dimension "pos", l an expression involving only earlier
+ * dimensions and n smaller than the coefficient of the integer division
+ * in the equality.  In this case, the output dimension can be defined
+ * in terms of a modulo expression that does not involve the integer division.
+ * *div is then set to this single integer division and
+ * *ineq is set to the index of constraint i >= l.
+ *
  * Return bmap->n_eq if there is no such equality.
  * Return -1 on error.
  */
 int isl_basic_map_output_defining_equality(__isl_keep isl_basic_map *bmap,
-	int pos)
+	int pos, int *div, int *ineq)
 {
-	int j, k;
+	int j, k, l;
 	unsigned n_out, o_out;
 	unsigned n_div, o_div;
 
@@ -10348,20 +10511,37 @@ int isl_basic_map_output_defining_equality(__isl_keep isl_basic_map *bmap,
 	n_div = isl_basic_map_dim(bmap, isl_dim_div);
 	o_div = isl_basic_map_offset(bmap, isl_dim_div);
 
+	if (ineq)
+		*ineq = bmap->n_ineq;
+	if (div)
+		*div = n_div;
 	for (j = 0; j < bmap->n_eq; ++j) {
 		if (isl_int_is_zero(bmap->eq[j][o_out + pos]))
 			continue;
 		if (isl_seq_first_non_zero(bmap->eq[j] + o_out + pos + 1,
 					n_out - (pos + 1)) != -1)
 			continue;
-		for (k = 0; k < n_div; ++k) {
-			if (isl_int_is_zero(bmap->eq[j][o_div + k]))
-				continue;
-			if (div_may_involve_output(bmap, k))
-				break;
-		}
+		k = first_div_may_involve_output(bmap, bmap->eq[j] + o_div,
+						0, n_div);
 		if (k >= n_div)
 			return j;
+		if (!isl_int_is_one(bmap->eq[j][o_out + pos]) &&
+		    !isl_int_is_negone(bmap->eq[j][o_out + pos]))
+			continue;
+		if (first_div_may_involve_output(bmap, bmap->eq[j] + o_div,
+						k + 1, n_div - (k+1)) < n_div)
+			continue;
+		l = find_modulo_constraint_pair(bmap, pos,
+						bmap->eq[j][o_div + k]);
+		if (l < 0)
+			return -1;
+		if (l >= bmap->n_ineq)
+			continue;
+		if (div)
+			*div = k;
+		if (ineq)
+			*ineq = l;
+		return j;
 	}
 
 	return bmap->n_eq;
@@ -10385,7 +10565,8 @@ isl_bool isl_basic_map_plain_is_single_valued(__isl_keep isl_basic_map *bmap)
 	for (i = 0; i < n_out; ++i) {
 		int eq;
 
-		eq = isl_basic_map_output_defining_equality(bmap, i);
+		eq = isl_basic_map_output_defining_equality(bmap, i,
+							    NULL, NULL);
 		if (eq < 0)
 			return isl_bool_error;
 		if (eq >= bmap->n_eq)
