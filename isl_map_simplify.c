@@ -3550,6 +3550,13 @@ isl_bool isl_set_is_disjoint(__isl_keep isl_set *set1, __isl_keep isl_set *set2)
 	return isl_map_is_disjoint(set1, set2);
 }
 
+/* Is "v" equal to 0, 1 or -1?
+ */
+static int is_zero_or_one(isl_int v)
+{
+	return isl_int_is_zero(v) || isl_int_is_one(v) || isl_int_is_negone(v);
+}
+
 /* Check if we can combine a given div with lower bound l and upper
  * bound u with some other div and if so return that other div.
  * Otherwise return -1.
@@ -3575,6 +3582,8 @@ isl_bool isl_set_is_disjoint(__isl_keep isl_set *set1, __isl_keep isl_set *set2)
  *
  *	e + f (a + m b) >= 0
  *
+ * Furthermore, in the constraints that only contain b, the coefficient
+ * of b should be equal to 1 or -1.
  * If so, we return b so that "a + m b" can be replaced by
  * a single div "c = a + m b".
  */
@@ -3631,8 +3640,11 @@ static int div_find_coalesce(struct isl_basic_map *bmap, int *pairs,
 			int valid;
 			if (j == l || j == u)
 				continue;
-			if (isl_int_is_zero(bmap->ineq[j][1 + dim + div]))
-				continue;
+			if (isl_int_is_zero(bmap->ineq[j][1 + dim + div])) {
+				if (is_zero_or_one(bmap->ineq[j][1 + dim + i]))
+					continue;
+				break;
+			}
 			if (isl_int_is_zero(bmap->ineq[j][1 + dim + i]))
 				break;
 			isl_int_mul(bmap->ineq[j][1 + dim + div],
@@ -3804,8 +3816,8 @@ error:
 	return NULL;
 }
 
-/* Given a pair of divs div1 and div2 such that, expect for the lower bound l
- * and the upper bound u, div1 always occurs together with div2 in the form 
+/* Given a pair of divs div1 and div2 such that, except for the lower bound l
+ * and the upper bound u, div1 always occurs together with div2 in the form
  * (div1 + m div2), where m is the constant range on the variable div1
  * allowed by l and u, replace the pair div1 and div2 by a single
  * div that is equal to div1 + m div2.
@@ -3813,6 +3825,7 @@ error:
  * The new div will appear in the location that contains div2.
  * We need to modify all constraints that contain
  * div2 = (div - div1) / m
+ * The coefficient of div2 is known to be equal to 1 or -1.
  * (If a constraint does not contain div2, it will also not contain div1.)
  * If the constraint also contains div1, then we know they appear
  * as f (div1 + m div2) and we can simply replace (div1 + m div2) by div,
@@ -3829,20 +3842,19 @@ error:
  *
  * A lower bound on div2
  *
- *	n div2 + t >= 0
+ *	div2 + t >= 0
  *
  * can be replaced by
  *
- *	(n * (m div 2 + div1) + m t + n f)/g >= 0
+ *	m div2 + div1 + m t + f >= 0
  *
- * with g = gcd(m,n).
  * An upper bound
  *
- *	-n div2 + t >= 0
+ *	-div2 + t >= 0
  *
  * can be replaced by
  *
- *	(-n * (m div2 + div1) + m t + n f')/g >= 0
+ *	-(m div2 + div1) + m t + f' >= 0
  *
  * These constraint are those that we would obtain from eliminating
  * div1 using Fourier-Motzkin.
@@ -3853,17 +3865,16 @@ error:
 static struct isl_basic_map *coalesce_divs(struct isl_basic_map *bmap,
 	unsigned div1, unsigned div2, unsigned l, unsigned u)
 {
-	isl_int a;
-	isl_int b;
+	isl_ctx *ctx;
 	isl_int m;
 	unsigned dim, total;
 	int i;
 
+	ctx = isl_basic_map_get_ctx(bmap);
+
 	dim = isl_space_dim(bmap->dim, isl_dim_all);
 	total = 1 + dim + bmap->n_div;
 
-	isl_int_init(a);
-	isl_int_init(b);
 	isl_int_init(m);
 	isl_int_add(m, bmap->ineq[l][0], bmap->ineq[u][0]);
 	isl_int_add_ui(m, m, 1);
@@ -3873,26 +3884,18 @@ static struct isl_basic_map *coalesce_divs(struct isl_basic_map *bmap,
 			continue;
 		if (isl_int_is_zero(bmap->ineq[i][1 + dim + div2]))
 			continue;
-		if (isl_int_is_zero(bmap->ineq[i][1 + dim + div1])) {
-			isl_int_gcd(b, m, bmap->ineq[i][1 + dim + div2]);
-			isl_int_divexact(a, m, b);
-			isl_int_divexact(b, bmap->ineq[i][1 + dim + div2], b);
-			if (isl_int_is_pos(b)) {
-				isl_seq_combine(bmap->ineq[i], a, bmap->ineq[i],
-						b, bmap->ineq[l], total);
-			} else {
-				isl_int_neg(b, b);
-				isl_seq_combine(bmap->ineq[i], a, bmap->ineq[i],
-						b, bmap->ineq[u], total);
-			}
-		}
+		if (isl_int_is_zero(bmap->ineq[i][1 + dim + div1]))
+			if (isl_int_is_pos(bmap->ineq[i][1 + dim + div2]))
+				isl_seq_combine(bmap->ineq[i], m, bmap->ineq[i],
+						ctx->one, bmap->ineq[l], total);
+			else
+				isl_seq_combine(bmap->ineq[i], m, bmap->ineq[i],
+						ctx->one, bmap->ineq[u], total);
 		isl_int_set(bmap->ineq[i][1 + dim + div2],
 			    bmap->ineq[i][1 + dim + div1]);
 		isl_int_set_si(bmap->ineq[i][1 + dim + div1], 0);
 	}
 
-	isl_int_clear(a);
-	isl_int_clear(b);
 	isl_int_clear(m);
 	if (l > u) {
 		isl_basic_map_drop_inequality(bmap, l);

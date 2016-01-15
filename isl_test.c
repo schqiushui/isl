@@ -182,6 +182,14 @@ struct {
 	  "{ [a,b] -> [i,j] : a > i or (a = i and b > j) }" },
 	{ "{ [a,b] -> [i,j] : a,b >>= i,j }",
 	  "{ [a,b] -> [i,j] : a > i or (a = i and b >= j) }" },
+	{ "{ [n] -> [i] : exists (a, b, c: 8b <= i - 32a and "
+			    "8b >= -7 + i - 32 a and b >= 0 and b <= 3 and "
+			    "8c < n - 32a and i < n and c >= 0 and "
+			    "c <= 3 and c >= -4a) }",
+	  "{ [n] -> [i] : 0 <= i < n }" },
+	{ "{ [x] -> [] : exists (a, b: 0 <= a <= 1 and 0 <= b <= 3 and "
+			    "2b <= x - 8a and 2b >= -1 + x - 8a) }",
+	  "{ [x] -> [] : 0 <= x <= 15 }" },
 };
 
 int test_parse(struct isl_ctx *ctx)
@@ -3613,6 +3621,7 @@ static int test_bounded_coefficients_schedule(isl_ctx *ctx)
 int test_schedule(isl_ctx *ctx)
 {
 	const char *D, *W, *R, *V, *P, *S;
+	int max_coincidence;
 
 	/* Handle resulting schedule with zero bands. */
 	if (test_one_schedule(ctx, "{[]}", "{}", "{}", "{[] -> []}", 0, 0) < 0)
@@ -3702,8 +3711,11 @@ int test_schedule(isl_ctx *ctx)
 		    "S4[i] -> a[i,N] }";
 	S = "{ S1[i] -> [0,i,0]; S2[i] -> [1,i,0]; S3[i,j] -> [2,i,j]; "
 		"S4[i] -> [4,i,0] }";
+	max_coincidence = isl_options_get_schedule_maximize_coincidence(ctx);
+	isl_options_set_schedule_maximize_coincidence(ctx, 0);
 	if (test_one_schedule(ctx, D, W, R, S, 2, 0) < 0)
 		return -1;
+	isl_options_set_schedule_maximize_coincidence(ctx, max_coincidence);
 
 	D = "[N] -> { S_0[i, j] : i >= 1 and i <= N and j >= 1 and j <= N }";
 	W = "[N] -> { S_0[i, j] -> s[0] : i >= 1 and i <= N and j >= 1 and "
@@ -3912,6 +3924,36 @@ int test_schedule(isl_ctx *ctx)
 		return -1;
 
 	return 0;
+}
+
+/* Perform scheduling tests using the whole component scheduler.
+ */
+static int test_schedule_whole(isl_ctx *ctx)
+{
+	int whole;
+	int r;
+
+	whole = isl_options_get_schedule_whole_component(ctx);
+	isl_options_set_schedule_whole_component(ctx, 1);
+	r = test_schedule(ctx);
+	isl_options_set_schedule_whole_component(ctx, whole);
+
+	return r;
+}
+
+/* Perform scheduling tests using the incremental scheduler.
+ */
+static int test_schedule_incremental(isl_ctx *ctx)
+{
+	int whole;
+	int r;
+
+	whole = isl_options_get_schedule_whole_component(ctx);
+	isl_options_set_schedule_whole_component(ctx, 0);
+	r = test_schedule(ctx);
+	isl_options_set_schedule_whole_component(ctx, whole);
+
+	return r;
 }
 
 int test_plain_injective(isl_ctx *ctx, const char *str, int injective)
@@ -6240,7 +6282,8 @@ struct {
 	{ "dim_max", &test_dim_max },
 	{ "affine", &test_aff },
 	{ "injective", &test_injective },
-	{ "schedule", &test_schedule },
+	{ "schedule (whole component)", &test_schedule_whole },
+	{ "schedule (incremental)", &test_schedule_incremental },
 	{ "schedule tree grouping", &test_schedule_tree_group },
 	{ "tile", &test_tile },
 	{ "union_pw", &test_union_pw },
