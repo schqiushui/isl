@@ -2152,30 +2152,36 @@ static int is_related(isl_int *c, int len, int *relevant)
 	return 0;
 }
 
-/* Drop constraints from "bset" that do not involve any of
+/* Drop constraints from "bmap" that do not involve any of
  * the dimensions marked "relevant".
  */
-static __isl_give isl_basic_set *drop_unrelated_constraints(
-	__isl_take isl_basic_set *bset, int *relevant)
+static __isl_give isl_basic_map *drop_unrelated_constraints(
+	__isl_take isl_basic_map *bmap, int *relevant)
 {
 	int i, dim;
 
-	dim = isl_basic_set_dim(bset, isl_dim_set);
+	dim = isl_basic_map_dim(bmap, isl_dim_all);
 	for (i = 0; i < dim; ++i)
 		if (!relevant[i])
 			break;
 	if (i >= dim)
-		return bset;
+		return bmap;
 
-	for (i = bset->n_eq - 1; i >= 0; --i)
-		if (!is_related(bset->eq[i] + 1, dim, relevant))
-			isl_basic_set_drop_equality(bset, i);
+	for (i = bmap->n_eq - 1; i >= 0; --i)
+		if (!is_related(bmap->eq[i] + 1, dim, relevant)) {
+			bmap = isl_basic_map_cow(bmap);
+			if (isl_basic_map_drop_equality(bmap, i) < 0)
+				return isl_basic_map_free(bmap);
+		}
 
-	for (i = bset->n_ineq - 1; i >= 0; --i)
-		if (!is_related(bset->ineq[i] + 1, dim, relevant))
-			isl_basic_set_drop_inequality(bset, i);
+	for (i = bmap->n_ineq - 1; i >= 0; --i)
+		if (!is_related(bmap->ineq[i] + 1, dim, relevant)) {
+			bmap = isl_basic_map_cow(bmap);
+			if (isl_basic_map_drop_inequality(bmap, i) < 0)
+				return isl_basic_map_free(bmap);
+		}
 
-	return bset;
+	return bmap;
 }
 
 /* Update the groups in "group" based on the (linear part of a) constraint "c".
@@ -2224,11 +2230,11 @@ static int *alloc_groups(__isl_keep isl_basic_set *context)
 	return isl_calloc_array(ctx, int, dim);
 }
 
-/* Drop constraints from "context" that only involve variables that are
+/* Drop constraints from "bmap" that only involve variables that are
  * not related to any of the variables marked with a "-1" in "group".
  *
  * We construct groups of variables that collect variables that
- * (indirectly) appear in some common constraint of "context".
+ * (indirectly) appear in some common constraint of "bmap".
  * Each group is identified by the first variable in the group,
  * except for the special group of variables that was already identified
  * in the input as -1 (or are related to those variables).
@@ -2236,7 +2242,7 @@ static int *alloc_groups(__isl_keep isl_basic_set *context)
  * otherwise the group of i is the group of group[i].
  *
  * We first initialize groups for the remaining variables.
- * Then we iterate over the constraints of "context" and update the
+ * Then we iterate over the constraints of "bmap" and update the
  * group of the variables in the constraint by the smallest group.
  * Finally, we resolve indirect references to groups by running over
  * the variables.
@@ -2244,14 +2250,17 @@ static int *alloc_groups(__isl_keep isl_basic_set *context)
  * After computing the groups, we drop constraints that do not involve
  * any variables in the -1 group.
  */
-static __isl_give isl_basic_set *group_and_drop_irrelevant_constraints(
-	__isl_take isl_basic_set *context, __isl_take int *group)
+__isl_give isl_basic_map *isl_basic_map_drop_unrelated_constraints(
+	__isl_take isl_basic_map *bmap, __isl_take int *group)
 {
 	int dim;
 	int i;
 	int last;
 
-	dim = isl_basic_set_dim(context, isl_dim_set);
+	if (!bmap)
+		return NULL;
+
+	dim = isl_basic_map_dim(bmap, isl_dim_all);
 
 	last = -1;
 	for (i = 0; i < dim; ++i)
@@ -2259,13 +2268,13 @@ static __isl_give isl_basic_set *group_and_drop_irrelevant_constraints(
 			last = group[i] = i;
 	if (last < 0) {
 		free(group);
-		return context;
+		return bmap;
 	}
 
-	for (i = 0; i < context->n_eq; ++i)
-		update_groups(dim, group, context->eq[i] + 1);
-	for (i = 0; i < context->n_ineq; ++i)
-		update_groups(dim, group, context->ineq[i] + 1);
+	for (i = 0; i < bmap->n_eq; ++i)
+		update_groups(dim, group, bmap->eq[i] + 1);
+	for (i = 0; i < bmap->n_ineq; ++i)
+		update_groups(dim, group, bmap->ineq[i] + 1);
 
 	for (i = 0; i < dim; ++i)
 		if (group[i] >= 0)
@@ -2274,10 +2283,10 @@ static __isl_give isl_basic_set *group_and_drop_irrelevant_constraints(
 	for (i = 0; i < dim; ++i)
 		group[i] = group[i] == -1;
 
-	context = drop_unrelated_constraints(context, group);
+	bmap = drop_unrelated_constraints(bmap, group);
 
 	free(group);
-	return context;
+	return bmap;
 }
 
 /* Drop constraints from "context" that are irrelevant for computing
@@ -2321,7 +2330,7 @@ static __isl_give isl_basic_set *drop_irrelevant_constraints(
 			group[i] = -1;
 	}
 
-	return group_and_drop_irrelevant_constraints(context, group);
+	return isl_basic_map_drop_unrelated_constraints(context, group);
 }
 
 /* Drop constraints from "context" that are irrelevant for computing
@@ -2364,7 +2373,7 @@ static __isl_give isl_basic_set *drop_irrelevant_constraints_marked(
 			group[i] = -1;
 	}
 
-	return group_and_drop_irrelevant_constraints(context, group);
+	return isl_basic_map_drop_unrelated_constraints(context, group);
 }
 
 /* Do all "n" entries of "row" contain a negative value?
@@ -2495,7 +2504,7 @@ static __isl_give isl_basic_set *uset_gist_full(__isl_take isl_basic_set *bset,
 	if (!bset || !ineq || !context)
 		goto error;
 
-	if (bset->n_ineq == 0 || isl_basic_set_is_universe(context)) {
+	if (bset->n_ineq == 0 || isl_basic_set_plain_is_universe(context)) {
 		isl_basic_set_free(context);
 		isl_mat_free(ineq);
 		return bset;
@@ -2514,7 +2523,7 @@ static __isl_give isl_basic_set *uset_gist_full(__isl_take isl_basic_set *bset,
 	context = drop_irrelevant_constraints_marked(context, ineq, row);
 	if (!context)
 		goto error;
-	if (isl_basic_set_is_universe(context))
+	if (isl_basic_set_plain_is_universe(context))
 		return update_ineq_free(bset, ineq, context, row, NULL);
 
 	n_eq = context->n_eq;
@@ -2830,7 +2839,7 @@ struct isl_basic_map *isl_basic_map_gist(struct isl_basic_map *bmap,
 	if (!bmap || !context)
 		goto error;
 
-	if (isl_basic_map_is_universe(bmap)) {
+	if (isl_basic_map_plain_is_universe(bmap)) {
 		isl_basic_map_free(context);
 		return bmap;
 	}
@@ -3060,9 +3069,9 @@ __isl_give isl_basic_map *isl_basic_map_plain_gist(
 {
 	isl_bool done, known;
 
-	done = isl_basic_map_is_universe(context);
+	done = isl_basic_map_plain_is_universe(context);
 	if (done == isl_bool_false)
-		done = isl_basic_map_is_universe(bmap);
+		done = isl_basic_map_plain_is_universe(bmap);
 	if (done == isl_bool_false)
 		done = isl_basic_map_plain_is_empty(context);
 	if (done == isl_bool_false)
@@ -3122,7 +3131,7 @@ __isl_give isl_map *isl_map_plain_gist_basic_map(__isl_take isl_map *map,
 	int i;
 	isl_bool univ, known;
 
-	univ = isl_basic_map_is_universe(context);
+	univ = isl_basic_map_plain_is_universe(context);
 	if (univ < 0)
 		goto error;
 	if (univ) {
@@ -3142,7 +3151,7 @@ __isl_give isl_map *isl_map_plain_gist_basic_map(__isl_take isl_map *map,
 	for (i = 0; i < map->n; ++i) {
 		map->p[i] = isl_basic_map_plain_gist(map->p[i],
 						isl_basic_map_copy(context));
-		univ = isl_basic_map_is_universe(map->p[i]);
+		univ = isl_basic_map_plain_is_universe(map->p[i]);
 		if (univ < 0)
 			goto error;
 		if (univ && map->n > 1)
@@ -3513,11 +3522,11 @@ isl_bool isl_basic_map_is_disjoint(__isl_keep isl_basic_map *bmap1,
 	if (disjoint < 0 || disjoint)
 		return disjoint;
 
-	intersect = isl_basic_map_is_universe(bmap1);
+	intersect = isl_basic_map_plain_is_universe(bmap1);
 	if (intersect < 0 || intersect)
 		return intersect < 0 ? isl_bool_error : isl_bool_false;
 
-	intersect = isl_basic_map_is_universe(bmap2);
+	intersect = isl_basic_map_plain_is_universe(bmap2);
 	if (intersect < 0 || intersect)
 		return intersect < 0 ? isl_bool_error : isl_bool_false;
 
