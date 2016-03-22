@@ -3396,25 +3396,38 @@ int isl_basic_set_plain_is_disjoint(__isl_keep isl_basic_set *bset1,
 					      (struct isl_basic_map *)bset2);
 }
 
-/* Are "map1" and "map2" obviously disjoint?
- *
- * If one of them is empty or if they live in different spaces (ignoring
- * parameters), then they are clearly disjoint.
- *
- * If they have different parameters, then we skip any further tests.
- *
- * If they are obviously equal, but not obviously empty, then we will
- * not be able to detect if they are disjoint.
- *
- * Otherwise we check if each basic map in "map1" is obviously disjoint
- * from each basic map in "map2".
+/* Does "test" hold for all pairs of basic maps in "map1" and "map2"?
  */
-isl_bool isl_map_plain_is_disjoint(__isl_keep isl_map *map1,
-	__isl_keep isl_map *map2)
+static isl_bool all_pairs(__isl_keep isl_map *map1, __isl_keep isl_map *map2,
+	isl_bool (*test)(__isl_keep isl_basic_map *bmap1,
+		__isl_keep isl_basic_map *bmap2))
 {
 	int i, j;
+
+	if (!map1 || !map2)
+		return isl_bool_error;
+
+	for (i = 0; i < map1->n; ++i) {
+		for (j = 0; j < map2->n; ++j) {
+			isl_bool d = test(map1->p[i], map2->p[j]);
+			if (d != isl_bool_true)
+				return d;
+		}
+	}
+
+	return isl_bool_true;
+}
+
+/* Are "map1" and "map2" obviously disjoint, based on information
+ * that can be derived without looking at the individual basic maps?
+ *
+ * In particular, if one of them is empty or if they live in different spaces
+ * (ignoring parameters), then they are clearly disjoint.
+ */
+static isl_bool isl_map_plain_is_disjoint_global(__isl_keep isl_map *map1,
+	__isl_keep isl_map *map2)
+{
 	isl_bool disjoint;
-	isl_bool intersect;
 	isl_bool match;
 
 	if (!map1 || !map2)
@@ -3438,6 +3451,34 @@ isl_bool isl_map_plain_is_disjoint(__isl_keep isl_map *map1,
 	if (match < 0 || !match)
 		return match < 0 ? isl_bool_error : isl_bool_true;
 
+	return isl_bool_false;
+}
+
+/* Are "map1" and "map2" obviously disjoint?
+ *
+ * If one of them is empty or if they live in different spaces (ignoring
+ * parameters), then they are clearly disjoint.
+ * This is checked by isl_map_plain_is_disjoint_global.
+ *
+ * If they have different parameters, then we skip any further tests.
+ *
+ * If they are obviously equal, but not obviously empty, then we will
+ * not be able to detect if they are disjoint.
+ *
+ * Otherwise we check if each basic map in "map1" is obviously disjoint
+ * from each basic map in "map2".
+ */
+isl_bool isl_map_plain_is_disjoint(__isl_keep isl_map *map1,
+	__isl_keep isl_map *map2)
+{
+	isl_bool disjoint;
+	isl_bool intersect;
+	isl_bool match;
+
+	disjoint = isl_map_plain_is_disjoint_global(map1, map2);
+	if (disjoint < 0 || disjoint)
+		return disjoint;
+
 	match = isl_space_match(map1->dim, isl_dim_param,
 				map2->dim, isl_dim_param);
 	if (match < 0 || !match)
@@ -3447,31 +3488,24 @@ isl_bool isl_map_plain_is_disjoint(__isl_keep isl_map *map1,
 	if (intersect < 0 || intersect)
 		return intersect < 0 ? isl_bool_error : isl_bool_false;
 
-	for (i = 0; i < map1->n; ++i) {
-		for (j = 0; j < map2->n; ++j) {
-			isl_bool d = isl_basic_map_plain_is_disjoint(map1->p[i],
-								   map2->p[j]);
-			if (d != isl_bool_true)
-				return d;
-		}
-	}
-	return isl_bool_true;
+	return all_pairs(map1, map2, &isl_basic_map_plain_is_disjoint);
 }
 
 /* Are "map1" and "map2" disjoint?
  *
  * They are disjoint if they are "obviously disjoint" or if one of them
  * is empty.  Otherwise, they are not disjoint if one of them is universal.
- * If none of these cases apply, we compute the intersection and see if
- * the result is empty.
+ * If the two inputs are (obviously) equal and not empty, then they are
+ * not disjoint.
+ * If none of these cases apply, then check if all pairs of basic maps
+ * are disjoint.
  */
 isl_bool isl_map_is_disjoint(__isl_keep isl_map *map1, __isl_keep isl_map *map2)
 {
 	isl_bool disjoint;
 	isl_bool intersect;
-	isl_map *test;
 
-	disjoint = isl_map_plain_is_disjoint(map1, map2);
+	disjoint = isl_map_plain_is_disjoint_global(map1, map2);
 	if (disjoint < 0 || disjoint)
 		return disjoint;
 
@@ -3491,11 +3525,11 @@ isl_bool isl_map_is_disjoint(__isl_keep isl_map *map1, __isl_keep isl_map *map2)
 	if (intersect < 0 || intersect)
 		return intersect < 0 ? isl_bool_error : isl_bool_false;
 
-	test = isl_map_intersect(isl_map_copy(map1), isl_map_copy(map2));
-	disjoint = isl_map_is_empty(test);
-	isl_map_free(test);
+	intersect = isl_map_plain_is_equal(map1, map2);
+	if (intersect < 0 || intersect)
+		return isl_bool_not(intersect);
 
-	return disjoint;
+	return all_pairs(map1, map2, &isl_basic_map_is_disjoint);
 }
 
 /* Are "bmap1" and "bmap2" disjoint?

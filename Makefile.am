@@ -114,6 +114,8 @@ libisl_la_SOURCES = \
 	isl_ilp_private.h \
 	isl_input.c \
 	isl_int.h \
+	isl_local.h \
+	isl_local.c \
 	isl_local_space_private.h \
 	isl_local_space.c \
 	isl_lp.c \
@@ -339,6 +341,7 @@ EXTRA_DIST = \
 	isl_multi_apply_templ.c \
 	isl_multi_apply_set.c \
 	isl_multi_apply_union_set.c \
+	isl_multi_cmp.c \
 	isl_multi_coalesce.c \
 	isl_multi_floor.c \
 	isl_multi_gist.c \
@@ -349,6 +352,7 @@ EXTRA_DIST = \
 	isl_pw_macro.h \
 	isl_pw_templ.c \
 	isl_pw_hash.c \
+	isl_pw_union_opt.c \
 	isl_union_macro.h \
 	isl_union_templ.c \
 	isl_union_single.c \
