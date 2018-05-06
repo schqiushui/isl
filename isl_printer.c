@@ -669,9 +669,17 @@ __isl_give isl_printer *isl_printer_end_line(__isl_take isl_printer *p)
 	return p->ops->end_line(p);
 }
 
-char *isl_printer_get_str(__isl_keep isl_printer *printer)
+/* Return a copy of the string constructed by the string printer "printer".
+ */
+__isl_give char *isl_printer_get_str(__isl_keep isl_printer *printer)
 {
-	if (!printer || !printer->buf)
+	if (!printer)
+		return NULL;
+	if (printer->ops != &str_ops)
+		isl_die(isl_printer_get_ctx(printer), isl_error_invalid,
+			"isl_printer_get_str can only be called on a string "
+			"printer", return NULL);
+	if (!printer->buf)
 		return NULL;
 	return strdup(printer->buf);
 }
@@ -698,6 +706,8 @@ __isl_give isl_printer *isl_printer_yaml_start_mapping(
 {
 	enum isl_yaml_state state;
 
+	if (!p)
+		return NULL;
 	p = enter_state(p, p->yaml_style == ISL_YAML_STYLE_BLOCK);
 	if (!p)
 		return NULL;

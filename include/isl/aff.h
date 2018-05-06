@@ -130,6 +130,10 @@ __isl_give isl_aff *isl_aff_pullback_multi_aff(__isl_take isl_aff *aff,
 __isl_give isl_basic_set *isl_aff_zero_basic_set(__isl_take isl_aff *aff);
 __isl_give isl_basic_set *isl_aff_neg_basic_set(__isl_take isl_aff *aff);
 
+__isl_give isl_basic_set *isl_aff_eq_basic_set(__isl_take isl_aff *aff1,
+	__isl_take isl_aff *aff2);
+__isl_give isl_set *isl_aff_eq_set(__isl_take isl_aff *aff1,
+	__isl_take isl_aff *aff2);
 __isl_give isl_basic_set *isl_aff_le_basic_set(__isl_take isl_aff *aff1,
 	__isl_take isl_aff *aff2);
 __isl_give isl_set *isl_aff_le_set(__isl_take isl_aff *aff1,
@@ -811,7 +815,7 @@ __isl_give isl_union_pw_multi_aff *isl_union_pw_multi_aff_from_union_pw_aff(
 int isl_union_pw_aff_n_pw_aff(__isl_keep isl_union_pw_aff *upa);
 
 isl_stat isl_union_pw_aff_foreach_pw_aff(__isl_keep isl_union_pw_aff *upa,
-	isl_stat (*fn)(__isl_take isl_pw_aff *ma, void *user), void *user);
+	isl_stat (*fn)(__isl_take isl_pw_aff *pa, void *user), void *user);
 __isl_give isl_pw_aff *isl_union_pw_aff_extract_pw_aff(
 	__isl_keep isl_union_pw_aff *upa, __isl_take isl_space *space);
 
@@ -881,6 +885,7 @@ __isl_give isl_union_pw_aff *isl_union_pw_aff_read_from_str(isl_ctx *ctx,
 __isl_give char *isl_union_pw_aff_to_str(__isl_keep isl_union_pw_aff *upa);
 __isl_give isl_printer *isl_printer_print_union_pw_aff(
 	__isl_take isl_printer *p, __isl_keep isl_union_pw_aff *upa);
+void isl_union_pw_aff_dump(__isl_keep isl_union_pw_aff *upa);
 
 ISL_DECLARE_MULTI(union_pw_aff)
 ISL_DECLARE_MULTI_NEG(union_pw_aff)
