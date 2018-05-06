@@ -22,6 +22,7 @@
 #include <isl_map_private.h>
 #include <isl_aff_private.h>
 #include <isl_space_private.h>
+#include <isl/id.h>
 #include <isl/set.h>
 #include <isl/flow.h>
 #include <isl_constraint_private.h>
@@ -119,6 +120,200 @@ static int test_parse_multi_val(isl_ctx *ctx, const char *str)
 	return mv ? 0 : -1;
 }
 
+/* Check that printing "mpa" and parsing the output results
+ * in the same expression.
+ */
+static isl_stat check_reparse_mpa(isl_ctx *ctx,
+	__isl_take isl_multi_pw_aff *mpa)
+{
+	char *str;
+	isl_bool equal;
+	isl_multi_pw_aff *mpa2;
+
+	str = isl_multi_pw_aff_to_str(mpa);
+	mpa2 = isl_multi_pw_aff_read_from_str(ctx, str);
+	free(str);
+	equal = isl_multi_pw_aff_plain_is_equal(mpa, mpa2);
+	isl_multi_pw_aff_free(mpa);
+	isl_multi_pw_aff_free(mpa2);
+	if (equal < 0)
+		return isl_stat_error;
+	if (!equal)
+		isl_die(ctx, isl_error_unknown,
+			"parsed function not equal to original",
+			return isl_stat_error);
+
+	return isl_stat_ok;
+}
+
+/* String descriptions of multi piecewise affine expressions
+ * that are used for testing printing and parsing.
+ */
+const char *parse_multi_mpa_tests[] = {
+	"{ A[x, y] -> [] : x + y >= 0 }",
+	"{ A[x, y] -> B[] : x + y >= 0 }",
+	"{ A[x, y] -> [x] : x + y >= 0 }",
+	"[N] -> { A[x, y] -> [x] : x + y <= N }",
+	"{ A[x, y] -> [x, y] : x + y >= 0 }",
+	"{ A[x, y] -> [(x : x >= 0), (y : y >= 0)] : x + y >= 0 }",
+	"[N] -> { [] : N >= 0 }",
+	"[N] -> { [] : N >= 0 }",
+	"[N] -> { [N] : N >= 0 }",
+	"[N] -> { [N, N + 1] : N >= 0 }",
+	"[N, M] -> { [(N : N >= 0), (M : M >= 0)] : N + M >= 0 }",
+};
+
+/* Test parsing of multi piecewise affine expressions by printing
+ * the expressions and checking that parsing the output results
+ * in the same expression.
+ * Do this for a couple of manually constructed expressions and
+ * a set of expressions parsed from strings.
+ */
+static int test_parse_mpa(isl_ctx *ctx)
+{
+	int i;
+	isl_space *space;
+	isl_set *dom;
+	isl_multi_pw_aff *mpa;
+	isl_stat r;
+
+	space = isl_space_set_alloc(ctx, 0, 0);
+	space = isl_space_set_tuple_name(space, isl_dim_set, "A");
+	mpa = isl_multi_pw_aff_zero(space);
+	r = check_reparse_mpa(ctx, mpa);
+	if (r < 0)
+		return -1;
+
+	space = isl_space_set_alloc(ctx, 1, 0);
+	space = isl_space_set_dim_name(space, isl_dim_param, 0, "N");
+	space = isl_space_set_tuple_name(space, isl_dim_set, "A");
+	dom = isl_set_universe(isl_space_params(isl_space_copy(space)));
+	dom = isl_set_lower_bound_si(dom, isl_dim_param, 0, 5);
+	mpa = isl_multi_pw_aff_zero(space);
+	mpa = isl_multi_pw_aff_intersect_domain(mpa, dom);
+	r = check_reparse_mpa(ctx, mpa);
+	if (r < 0)
+		return -1;
+
+	for (i = 0; i < ARRAY_SIZE(parse_multi_mpa_tests); ++i) {
+		const char *str;
+
+		str = parse_multi_mpa_tests[i];
+		mpa = isl_multi_pw_aff_read_from_str(ctx, str);
+		r = check_reparse_mpa(ctx, mpa);
+		if (r < 0)
+			return -1;
+	}
+
+	return 0;
+}
+
+/* Check that printing "mupa" and parsing the output results
+ * in the same expression.
+ */
+static isl_stat check_reparse_mupa(isl_ctx *ctx,
+	__isl_take isl_multi_union_pw_aff *mupa)
+{
+	char *str;
+	isl_bool equal;
+	isl_multi_union_pw_aff *mupa2;
+
+	str = isl_multi_union_pw_aff_to_str(mupa);
+	mupa2 = isl_multi_union_pw_aff_read_from_str(ctx, str);
+	free(str);
+	equal = isl_multi_union_pw_aff_plain_is_equal(mupa, mupa2);
+	isl_multi_union_pw_aff_free(mupa);
+	isl_multi_union_pw_aff_free(mupa2);
+	if (equal < 0)
+		return isl_stat_error;
+	if (!equal)
+		isl_die(ctx, isl_error_unknown,
+			"parsed function not equal to original",
+			return isl_stat_error);
+
+	return isl_stat_ok;
+}
+
+/* String descriptions of multi union piecewise affine expressions
+ * that are used for testing printing and parsing.
+ */
+const char *parse_multi_mupa_tests[] = {
+	"[]",
+	"A[]",
+	"A[B[] -> C[]]",
+	"(A[] : { S[x] : x > 0; T[y] : y >= 0 })",
+	"(A[] : { })",
+	"[N] -> (A[] : { })",
+	"[N] -> (A[] : { : N >= 0 })",
+	"[N] -> (A[] : { S[x] : x > N; T[y] : y >= 0 })",
+	"(A[] : [N] -> { S[x] : x > N; T[y] : y >= 0 })",
+	"A[{ S[x] -> [x + 1]; T[x] -> [x] }]",
+	"(A[{ S[x] -> [x + 1]; T[x] -> [x] }] : "
+		"{ S[x] : x > 0; T[y] : y >= 0 })",
+};
+
+/* Test parsing of multi union piecewise affine expressions by printing
+ * the expressions and checking that parsing the output results
+ * in the same expression.
+ * Do this for a couple of manually constructed expressions and
+ * a set of expressions parsed from strings.
+ */
+static int test_parse_mupa(isl_ctx *ctx)
+{
+	int i;
+	isl_space *space;
+	isl_multi_union_pw_aff *mupa;
+	isl_set *dom;
+	isl_union_set *uset;
+	isl_stat r;
+
+	space = isl_space_set_alloc(ctx, 0, 0);
+	space = isl_space_set_tuple_name(space, isl_dim_set, "A");
+	mupa = isl_multi_union_pw_aff_zero(space);
+	r = check_reparse_mupa(ctx, mupa);
+	if (r < 0)
+		return -1;
+
+	space = isl_space_set_alloc(ctx, 1, 0);
+	space = isl_space_set_dim_name(space, isl_dim_param, 0, "N");
+	space = isl_space_set_tuple_name(space, isl_dim_set, "A");
+	dom = isl_set_universe(space);
+	dom = isl_set_lower_bound_si(dom, isl_dim_param, 0, 5);
+	uset = isl_union_set_from_set(dom);
+	space = isl_space_set_alloc(ctx, 1, 0);
+	space = isl_space_set_dim_name(space, isl_dim_param, 0, "N");
+	space = isl_space_set_tuple_name(space, isl_dim_set, "B");
+	mupa = isl_multi_union_pw_aff_zero(space);
+	mupa = isl_multi_union_pw_aff_intersect_domain(mupa, uset);
+	r = check_reparse_mupa(ctx, mupa);
+	if (r < 0)
+		return -1;
+
+	for (i = 0; i < ARRAY_SIZE(parse_multi_mupa_tests); ++i) {
+		const char *str;
+
+		str = parse_multi_mupa_tests[i];
+		mupa = isl_multi_union_pw_aff_read_from_str(ctx, str);
+		r = check_reparse_mupa(ctx, mupa);
+		if (r < 0)
+			return -1;
+	}
+
+	return 0;
+}
+
+/* Test parsing of multi expressions.
+ */
+static int test_parse_multi(isl_ctx *ctx)
+{
+	if (test_parse_mpa(ctx) < 0)
+		return -1;
+	if (test_parse_mupa(ctx) < 0)
+		return -1;
+
+	return 0;
+}
+
 /* Pairs of binary relation representations that should represent
  * the same binary relations.
  */
@@ -190,6 +385,8 @@ struct {
 	{ "{ [x] -> [] : exists (a, b: 0 <= a <= 1 and 0 <= b <= 3 and "
 			    "2b <= x - 8a and 2b >= -1 + x - 8a) }",
 	  "{ [x] -> [] : 0 <= x <= 15 }" },
+	{ "{ [x] -> [x] : }",
+	  "{ [x] -> [x] }" },
 };
 
 int test_parse(struct isl_ctx *ctx)
@@ -203,6 +400,8 @@ int test_parse(struct isl_ctx *ctx)
 	if (test_parse_multi_val(ctx, "[n] -> { [2] }") < 0)
 		return -1;
 	if (test_parse_multi_val(ctx, "{ A[4, infty, NaN, -1/2, 2/3] }") < 0)
+		return -1;
+	if (test_parse_multi(ctx) < 0)
 		return -1;
 
 	str = "{ [i] -> [-i] }";
@@ -290,7 +489,7 @@ static int test_read(isl_ctx *ctx)
 static int test_bounded(isl_ctx *ctx)
 {
 	isl_set *set;
-	int bounded;
+	isl_bool bounded;
 
 	set = isl_set_read_from_str(ctx, "[n] -> {[i] : 0 <= i <= n }");
 	bounded = isl_set_is_bounded(set);
@@ -327,39 +526,73 @@ static int test_bounded(isl_ctx *ctx)
 }
 
 /* Construct the basic set { [i] : 5 <= i <= N } */
-static int test_construction(isl_ctx *ctx)
+static int test_construction_1(isl_ctx *ctx)
 {
-	isl_int v;
 	isl_space *dim;
 	isl_local_space *ls;
 	isl_basic_set *bset;
 	isl_constraint *c;
-
-	isl_int_init(v);
 
 	dim = isl_space_set_alloc(ctx, 1, 1);
 	bset = isl_basic_set_universe(isl_space_copy(dim));
 	ls = isl_local_space_from_space(dim);
 
 	c = isl_constraint_alloc_inequality(isl_local_space_copy(ls));
-	isl_int_set_si(v, -1);
-	isl_constraint_set_coefficient(c, isl_dim_set, 0, v);
-	isl_int_set_si(v, 1);
-	isl_constraint_set_coefficient(c, isl_dim_param, 0, v);
+	c = isl_constraint_set_coefficient_si(c, isl_dim_set, 0, -1);
+	c = isl_constraint_set_coefficient_si(c, isl_dim_param, 0, 1);
 	bset = isl_basic_set_add_constraint(bset, c);
 
 	c = isl_constraint_alloc_inequality(isl_local_space_copy(ls));
-	isl_int_set_si(v, 1);
-	isl_constraint_set_coefficient(c, isl_dim_set, 0, v);
-	isl_int_set_si(v, -5);
-	isl_constraint_set_constant(c, v);
+	c = isl_constraint_set_coefficient_si(c, isl_dim_set, 0, 1);
+	c = isl_constraint_set_constant_si(c, -5);
 	bset = isl_basic_set_add_constraint(bset, c);
 
 	isl_local_space_free(ls);
 	isl_basic_set_free(bset);
 
-	isl_int_clear(v);
+	return 0;
+}
 
+/* Construct the basic set { [x] : -100 <= x <= 100 }
+ * using isl_basic_set_{lower,upper}_bound_val and
+ * check that it is equal the same basic set parsed from a string.
+ */
+static int test_construction_2(isl_ctx *ctx)
+{
+	isl_bool equal;
+	isl_val *v;
+	isl_space *space;
+	isl_basic_set *bset1, *bset2;
+
+	v = isl_val_int_from_si(ctx, 100);
+	space = isl_space_set_alloc(ctx, 0, 1);
+	bset1 = isl_basic_set_universe(space);
+	bset1 = isl_basic_set_upper_bound_val(bset1, isl_dim_set, 0,
+						isl_val_copy(v));
+	bset1 = isl_basic_set_lower_bound_val(bset1, isl_dim_set, 0,
+						isl_val_neg(v));
+	bset2 = isl_basic_set_read_from_str(ctx, "{ [x] : -100 <= x <= 100 }");
+	equal = isl_basic_set_is_equal(bset1, bset2);
+	isl_basic_set_free(bset1);
+	isl_basic_set_free(bset2);
+
+	if (equal < 0)
+		return -1;
+	if (!equal)
+		isl_die(ctx, isl_error_unknown,
+			"failed construction", return -1);
+
+	return 0;
+}
+
+/* Basic tests for constructing basic sets.
+ */
+static int test_construction(isl_ctx *ctx)
+{
+	if (test_construction_1(ctx) < 0)
+		return -1;
+	if (test_construction_2(ctx) < 0)
+		return -1;
 	return 0;
 }
 
@@ -407,6 +640,36 @@ static int test_dim(isl_ctx *ctx)
 			"unexpected result", return -1);
 
 	return 0;
+}
+
+/* Check that "val" is equal to the value described by "str".
+ * If "str" is "NaN", then check for a NaN value explicitly.
+ */
+static isl_stat val_check_equal(__isl_keep isl_val *val, const char *str)
+{
+	isl_bool ok, is_nan;
+	isl_ctx *ctx;
+	isl_val *res;
+
+	if (!val)
+		return isl_stat_error;
+
+	ctx = isl_val_get_ctx(val);
+	res = isl_val_read_from_str(ctx, str);
+	is_nan = isl_val_is_nan(res);
+	if (is_nan < 0)
+		ok = isl_bool_error;
+	else if (is_nan)
+		ok = isl_val_is_nan(val);
+	else
+		ok = isl_val_eq(val, res);
+	isl_val_free(res);
+	if (ok < 0)
+		return isl_stat_error;
+	if (!ok)
+		isl_die(ctx, isl_error_unknown,
+			"unexpected result", return isl_stat_error);
+	return isl_stat_ok;
 }
 
 struct {
@@ -468,26 +731,19 @@ struct {
 static int test_un_val(isl_ctx *ctx)
 {
 	int i;
-	isl_val *v, *res;
+	isl_val *v;
 	__isl_give isl_val *(*fn)(__isl_take isl_val *v);
-	int ok;
 
 	for (i = 0; i < ARRAY_SIZE(val_un_tests); ++i) {
+		isl_stat r;
+
 		v = isl_val_read_from_str(ctx, val_un_tests[i].arg);
-		res = isl_val_read_from_str(ctx, val_un_tests[i].res);
 		fn = val_un_tests[i].op;
 		v = fn(v);
-		if (isl_val_is_nan(res))
-			ok = isl_val_is_nan(v);
-		else
-			ok = isl_val_eq(v, res);
+		r = val_check_equal(v, val_un_tests[i].res);
 		isl_val_free(v);
-		isl_val_free(res);
-		if (ok < 0)
+		if (r < 0)
 			return -1;
-		if (!ok)
-			isl_die(ctx, isl_error_unknown,
-				"unexpected result", return -1);
 	}
 
 	return 0;
@@ -669,14 +925,11 @@ static int test_div(isl_ctx *ctx)
 {
 	const char *str;
 	int empty;
-	isl_int v;
 	isl_space *dim;
 	isl_set *set;
 	isl_local_space *ls;
 	struct isl_basic_set *bset;
 	struct isl_constraint *c;
-
-	isl_int_init(v);
 
 	/* test 1 */
 	dim = isl_space_set_alloc(ctx, 0, 3);
@@ -684,21 +937,15 @@ static int test_div(isl_ctx *ctx)
 	ls = isl_local_space_from_space(dim);
 
 	c = isl_constraint_alloc_equality(isl_local_space_copy(ls));
-	isl_int_set_si(v, -1);
-	isl_constraint_set_constant(c, v);
-	isl_int_set_si(v, 1);
-	isl_constraint_set_coefficient(c, isl_dim_set, 0, v);
-	isl_int_set_si(v, 3);
-	isl_constraint_set_coefficient(c, isl_dim_set, 1, v);
+	c = isl_constraint_set_constant_si(c, -1);
+	c = isl_constraint_set_coefficient_si(c, isl_dim_set, 0, 1);
+	c = isl_constraint_set_coefficient_si(c, isl_dim_set, 1, 3);
 	bset = isl_basic_set_add_constraint(bset, c);
 
 	c = isl_constraint_alloc_equality(isl_local_space_copy(ls));
-	isl_int_set_si(v, 1);
-	isl_constraint_set_constant(c, v);
-	isl_int_set_si(v, -1);
-	isl_constraint_set_coefficient(c, isl_dim_set, 0, v);
-	isl_int_set_si(v, 3);
-	isl_constraint_set_coefficient(c, isl_dim_set, 2, v);
+	c = isl_constraint_set_constant_si(c, 1);
+	c = isl_constraint_set_coefficient_si(c, isl_dim_set, 0, -1);
+	c = isl_constraint_set_coefficient_si(c, isl_dim_set, 2, 3);
 	bset = isl_basic_set_add_constraint(bset, c);
 
 	bset = isl_basic_set_project_out(bset, isl_dim_set, 1, 2);
@@ -713,21 +960,15 @@ static int test_div(isl_ctx *ctx)
 	ls = isl_local_space_from_space(dim);
 
 	c = isl_constraint_alloc_equality(isl_local_space_copy(ls));
-	isl_int_set_si(v, 1);
-	isl_constraint_set_constant(c, v);
-	isl_int_set_si(v, -1);
-	isl_constraint_set_coefficient(c, isl_dim_set, 0, v);
-	isl_int_set_si(v, 3);
-	isl_constraint_set_coefficient(c, isl_dim_set, 1, v);
+	c = isl_constraint_set_constant_si(c, 1);
+	c = isl_constraint_set_coefficient_si(c, isl_dim_set, 0, -1);
+	c = isl_constraint_set_coefficient_si(c, isl_dim_set, 1, 3);
 	bset = isl_basic_set_add_constraint(bset, c);
 
 	c = isl_constraint_alloc_equality(isl_local_space_copy(ls));
-	isl_int_set_si(v, -1);
-	isl_constraint_set_constant(c, v);
-	isl_int_set_si(v, 1);
-	isl_constraint_set_coefficient(c, isl_dim_set, 0, v);
-	isl_int_set_si(v, 3);
-	isl_constraint_set_coefficient(c, isl_dim_set, 2, v);
+	c = isl_constraint_set_constant_si(c, -1);
+	c = isl_constraint_set_coefficient_si(c, isl_dim_set, 0, 1);
+	c = isl_constraint_set_coefficient_si(c, isl_dim_set, 2, 3);
 	bset = isl_basic_set_add_constraint(bset, c);
 
 	bset = isl_basic_set_project_out(bset, isl_dim_set, 1, 2);
@@ -742,21 +983,15 @@ static int test_div(isl_ctx *ctx)
 	ls = isl_local_space_from_space(dim);
 
 	c = isl_constraint_alloc_equality(isl_local_space_copy(ls));
-	isl_int_set_si(v, 1);
-	isl_constraint_set_constant(c, v);
-	isl_int_set_si(v, -1);
-	isl_constraint_set_coefficient(c, isl_dim_set, 0, v);
-	isl_int_set_si(v, 3);
-	isl_constraint_set_coefficient(c, isl_dim_set, 1, v);
+	c = isl_constraint_set_constant_si(c, 1);
+	c = isl_constraint_set_coefficient_si(c, isl_dim_set, 0, -1);
+	c = isl_constraint_set_coefficient_si(c, isl_dim_set, 1, 3);
 	bset = isl_basic_set_add_constraint(bset, c);
 
 	c = isl_constraint_alloc_equality(isl_local_space_copy(ls));
-	isl_int_set_si(v, -3);
-	isl_constraint_set_constant(c, v);
-	isl_int_set_si(v, 1);
-	isl_constraint_set_coefficient(c, isl_dim_set, 0, v);
-	isl_int_set_si(v, 4);
-	isl_constraint_set_coefficient(c, isl_dim_set, 2, v);
+	c = isl_constraint_set_constant_si(c, -3);
+	c = isl_constraint_set_coefficient_si(c, isl_dim_set, 0, 1);
+	c = isl_constraint_set_coefficient_si(c, isl_dim_set, 2, 4);
 	bset = isl_basic_set_add_constraint(bset, c);
 
 	bset = isl_basic_set_project_out(bset, isl_dim_set, 1, 2);
@@ -771,21 +1006,15 @@ static int test_div(isl_ctx *ctx)
 	ls = isl_local_space_from_space(dim);
 
 	c = isl_constraint_alloc_equality(isl_local_space_copy(ls));
-	isl_int_set_si(v, 2);
-	isl_constraint_set_constant(c, v);
-	isl_int_set_si(v, -1);
-	isl_constraint_set_coefficient(c, isl_dim_set, 0, v);
-	isl_int_set_si(v, 3);
-	isl_constraint_set_coefficient(c, isl_dim_set, 1, v);
+	c = isl_constraint_set_constant_si(c, 2);
+	c = isl_constraint_set_coefficient_si(c, isl_dim_set, 0, -1);
+	c = isl_constraint_set_coefficient_si(c, isl_dim_set, 1, 3);
 	bset = isl_basic_set_add_constraint(bset, c);
 
 	c = isl_constraint_alloc_equality(isl_local_space_copy(ls));
-	isl_int_set_si(v, -1);
-	isl_constraint_set_constant(c, v);
-	isl_int_set_si(v, 1);
-	isl_constraint_set_coefficient(c, isl_dim_set, 0, v);
-	isl_int_set_si(v, 6);
-	isl_constraint_set_coefficient(c, isl_dim_set, 2, v);
+	c = isl_constraint_set_constant_si(c, -1);
+	c = isl_constraint_set_coefficient_si(c, isl_dim_set, 0, 1);
+	c = isl_constraint_set_coefficient_si(c, isl_dim_set, 2, 6);
 	bset = isl_basic_set_add_constraint(bset, c);
 
 	bset = isl_basic_set_project_out(bset, isl_dim_set, 1, 2);
@@ -800,17 +1029,13 @@ static int test_div(isl_ctx *ctx)
 	ls = isl_local_space_from_space(dim);
 
 	c = isl_constraint_alloc_equality(isl_local_space_copy(ls));
-	isl_int_set_si(v, -1);
-	isl_constraint_set_coefficient(c, isl_dim_set, 0, v);
-	isl_int_set_si(v, 3);
-	isl_constraint_set_coefficient(c, isl_dim_set, 2, v);
+	c = isl_constraint_set_coefficient_si(c, isl_dim_set, 0, -1);
+	c = isl_constraint_set_coefficient_si(c, isl_dim_set, 2, 3);
 	bset = isl_basic_set_add_constraint(bset, c);
 
 	c = isl_constraint_alloc_equality(isl_local_space_copy(ls));
-	isl_int_set_si(v, 1);
-	isl_constraint_set_coefficient(c, isl_dim_set, 0, v);
-	isl_int_set_si(v, -3);
-	isl_constraint_set_coefficient(c, isl_dim_set, 1, v);
+	c = isl_constraint_set_coefficient_si(c, isl_dim_set, 0, 1);
+	c = isl_constraint_set_coefficient_si(c, isl_dim_set, 1, -3);
 	bset = isl_basic_set_add_constraint(bset, c);
 
 	bset = isl_basic_set_project_out(bset, isl_dim_set, 2, 1);
@@ -825,17 +1050,13 @@ static int test_div(isl_ctx *ctx)
 	ls = isl_local_space_from_space(dim);
 
 	c = isl_constraint_alloc_equality(isl_local_space_copy(ls));
-	isl_int_set_si(v, -1);
-	isl_constraint_set_coefficient(c, isl_dim_set, 0, v);
-	isl_int_set_si(v, 6);
-	isl_constraint_set_coefficient(c, isl_dim_set, 2, v);
+	c = isl_constraint_set_coefficient_si(c, isl_dim_set, 0, -1);
+	c = isl_constraint_set_coefficient_si(c, isl_dim_set, 2, 6);
 	bset = isl_basic_set_add_constraint(bset, c);
 
 	c = isl_constraint_alloc_equality(isl_local_space_copy(ls));
-	isl_int_set_si(v, 1);
-	isl_constraint_set_coefficient(c, isl_dim_set, 0, v);
-	isl_int_set_si(v, -3);
-	isl_constraint_set_coefficient(c, isl_dim_set, 1, v);
+	c = isl_constraint_set_coefficient_si(c, isl_dim_set, 0, 1);
+	c = isl_constraint_set_coefficient_si(c, isl_dim_set, 1, -3);
 	bset = isl_basic_set_add_constraint(bset, c);
 
 	bset = isl_basic_set_project_out(bset, isl_dim_set, 2, 1);
@@ -859,14 +1080,10 @@ static int test_div(isl_ctx *ctx)
 	ls = isl_local_space_from_space(dim);
 
 	c = isl_constraint_alloc_equality(isl_local_space_copy(ls));
-	isl_int_set_si(v, -1);
-	isl_constraint_set_coefficient(c, isl_dim_set, 0, v);
-	isl_int_set_si(v, -3);
-	isl_constraint_set_coefficient(c, isl_dim_set, 1, v);
-	isl_int_set_si(v, -3);
-	isl_constraint_set_coefficient(c, isl_dim_set, 2, v);
-	isl_int_set_si(v, 6);
-	isl_constraint_set_coefficient(c, isl_dim_set, 3, v);
+	c = isl_constraint_set_coefficient_si(c, isl_dim_set, 0, -1);
+	c = isl_constraint_set_coefficient_si(c, isl_dim_set, 1, -3);
+	c = isl_constraint_set_coefficient_si(c, isl_dim_set, 2, -3);
+	c = isl_constraint_set_coefficient_si(c, isl_dim_set, 3, 6);
 	bset = isl_basic_set_add_constraint(bset, c);
 
 	bset = isl_basic_set_project_out(bset, isl_dim_set, 3, 1);
@@ -884,23 +1101,16 @@ static int test_div(isl_ctx *ctx)
 	ls = isl_local_space_from_space(dim);
 
 	c = isl_constraint_alloc_equality(isl_local_space_copy(ls));
-	isl_int_set_si(v, -1);
-	isl_constraint_set_coefficient(c, isl_dim_set, 0, v);
-	isl_int_set_si(v, -3);
-	isl_constraint_set_coefficient(c, isl_dim_set, 1, v);
-	isl_int_set_si(v, -3);
-	isl_constraint_set_coefficient(c, isl_dim_set, 3, v);
-	isl_int_set_si(v, 6);
-	isl_constraint_set_coefficient(c, isl_dim_set, 4, v);
+	c = isl_constraint_set_coefficient_si(c, isl_dim_set, 0, -1);
+	c = isl_constraint_set_coefficient_si(c, isl_dim_set, 1, -3);
+	c = isl_constraint_set_coefficient_si(c, isl_dim_set, 3, -3);
+	c = isl_constraint_set_coefficient_si(c, isl_dim_set, 4, 6);
 	bset = isl_basic_set_add_constraint(bset, c);
 
 	c = isl_constraint_alloc_equality(isl_local_space_copy(ls));
-	isl_int_set_si(v, -1);
-	isl_constraint_set_coefficient(c, isl_dim_set, 0, v);
-	isl_int_set_si(v, 1);
-	isl_constraint_set_coefficient(c, isl_dim_set, 2, v);
-	isl_int_set_si(v, 1);
-	isl_constraint_set_constant(c, v);
+	c = isl_constraint_set_coefficient_si(c, isl_dim_set, 0, -1);
+	c = isl_constraint_set_coefficient_si(c, isl_dim_set, 2, 1);
+	c = isl_constraint_set_constant_si(c, 1);
 	bset = isl_basic_set_add_constraint(bset, c);
 
 	bset = isl_basic_set_project_out(bset, isl_dim_set, 4, 1);
@@ -918,21 +1128,15 @@ static int test_div(isl_ctx *ctx)
 	ls = isl_local_space_from_space(dim);
 
 	c = isl_constraint_alloc_equality(isl_local_space_copy(ls));
-	isl_int_set_si(v, 1);
-	isl_constraint_set_coefficient(c, isl_dim_set, 0, v);
-	isl_int_set_si(v, -1);
-	isl_constraint_set_coefficient(c, isl_dim_set, 1, v);
-	isl_int_set_si(v, -2);
-	isl_constraint_set_coefficient(c, isl_dim_set, 2, v);
+	c = isl_constraint_set_coefficient_si(c, isl_dim_set, 0, 1);
+	c = isl_constraint_set_coefficient_si(c, isl_dim_set, 1, -1);
+	c = isl_constraint_set_coefficient_si(c, isl_dim_set, 2, -2);
 	bset = isl_basic_set_add_constraint(bset, c);
 
 	c = isl_constraint_alloc_equality(isl_local_space_copy(ls));
-	isl_int_set_si(v, -1);
-	isl_constraint_set_coefficient(c, isl_dim_set, 0, v);
-	isl_int_set_si(v, 3);
-	isl_constraint_set_coefficient(c, isl_dim_set, 3, v);
-	isl_int_set_si(v, 2);
-	isl_constraint_set_constant(c, v);
+	c = isl_constraint_set_coefficient_si(c, isl_dim_set, 0, -1);
+	c = isl_constraint_set_coefficient_si(c, isl_dim_set, 3, 3);
+	c = isl_constraint_set_constant_si(c, 2);
 	bset = isl_basic_set_add_constraint(bset, c);
 
 	bset = isl_basic_set_project_out(bset, isl_dim_set, 2, 2);
@@ -950,10 +1154,8 @@ static int test_div(isl_ctx *ctx)
 	ls = isl_local_space_from_space(dim);
 
 	c = isl_constraint_alloc_equality(isl_local_space_copy(ls));
-	isl_int_set_si(v, 1);
-	isl_constraint_set_coefficient(c, isl_dim_set, 0, v);
-	isl_int_set_si(v, -2);
-	isl_constraint_set_coefficient(c, isl_dim_set, 2, v);
+	c = isl_constraint_set_coefficient_si(c, isl_dim_set, 0, 1);
+	c = isl_constraint_set_coefficient_si(c, isl_dim_set, 2, -2);
 	bset = isl_basic_set_add_constraint(bset, c);
 
 	bset = isl_basic_set_project_out(bset, isl_dim_set, 2, 1);
@@ -962,8 +1164,6 @@ static int test_div(isl_ctx *ctx)
 
 	isl_local_space_free(ls);
 	isl_basic_set_free(bset);
-
-	isl_int_clear(v);
 
 	str = "{ [i] : exists (e0, e1: 3e1 >= 1 + 2e0 and "
 	    "8e1 <= -1 + 5i - 5e0 and 2e1 >= 1 + 2i - 5e0) }";
@@ -1850,6 +2050,10 @@ struct {
 				"9*floor((-4a + 2c)/9) <= -3 - 4a + 2c) or "
 			"(exists (e0 = floor((-16 + 2c)/9): a = 4 and "
 				"b = 3 and 9e0 <= -19 + 2c)) }" },
+	{ 1, "{ [a, b, c] : (b = -1 + a and 0 < a <= 3 and "
+				"9*floor((-4a + 2c)/9) <= -3 - 4a + 2c) or "
+			"(a = 4 and b = 3 and "
+				"9*floor((-16 + 2c)/9) <= -19 + 2c) }" },
 	{ 0, "{ [a, b, c] : (b <= 2 and b <= -2 + a) or "
 			"(b = -1 + a and 0 < a <= 3 and "
 				"9*floor((-4a + 2c)/9) <= -3 - 4a + 2c) or "
@@ -1870,6 +2074,40 @@ struct {
 	       "[x, y] : 0 <= x <= 10 and 1 <= y <= 10 }" },
 	{ 1, "{ [a] : a <= 8 and "
 			"(a mod 10 = 7 or a mod 10 = 8 or a mod 10 = 9) }" },
+	{ 1, "{ [x, y] : 2y = -x and x <= 0 or "
+			"x <= -1 and 2y <= -x - 1 and 2y >= x - 1 }" },
+	{ 0, "{ [x, y] : 2y = -x and x <= 0 or "
+			"x <= -2 and 2y <= -x - 1 and 2y >= x - 1 }" },
+	{ 1, "{ [a] : (a <= 0 and 3*floor((a)/3) = a) or "
+			"(a < 0 and 3*floor((a)/3) < a) }" },
+	{ 1, "{ [a] : (a <= 0 and 3*floor((a)/3) = a) or "
+			"(a < -1 and 3*floor((a)/3) < a) }" },
+	{ 1, "{ [a, b] : a <= 1024 and b >= 0 and "
+		"((-31 - a + b <= 32*floor((-1 - a)/32) <= -33 + b and "
+		  "32*floor((-1 - a)/32) <= -16 + b + 16*floor((-1 - a)/16))"
+		"or (2 <= a <= 15 and b < a)) }" },
+	{ 1, "{ [a] : a > 0 and ((16*floor((a)/16) < a and "
+			"32*floor((a)/32) < a) or a <= 15) }" },
+	{ 1, "{ [a, b, c, d] : (-a + d) mod 64 = 0 and a <= 8 and b <= 1 and "
+			"10 - a <= c <= 3 and d >= 5 and 9 - 64b <= d <= 70;"
+	    "[a, b = 1, c, d] : (-a + d) mod 64 = 0 and a <= 8 and c >= 4 and "
+			"10 - a <= c <= 5 and 5 <= d <= 73 - c }" },
+	{ 1, "[n, m] -> { S_0[i] : (-n + i) mod 3 = 0 and m >= 3 + n and "
+			    "i >= n and 3*floor((2 + n + 2m)/3) <= n + 3m - i; "
+			 "S_0[n] : n <= m <= 2 + n }" },
+	{ 1, "{ [a, b] : exists (e0: 0 <= a <= 1 and b >= 0 and "
+			"2e0 >= -5 + a + 2b and 2e0 >= -1 + a + b and "
+			"2e0 <= a + b); "
+		"[a, b] : exists (e0: 0 <= a <= 1 and 2e0 >= -5 + a + 2b and "
+			"2e0 >= -1 - a + b and 2e0 <= -a + b and "
+			"2e0 < -a + 2b) }" },
+	{ 1, "{ [i, j, i - 8j] : 8 <= i <= 63 and -7 + i <= 8j <= i; "
+		"[i, 0, i] : 0 <= i <= 7 }" },
+	{ 1, "{ [a, b] : a >= 0 and 0 <= b <= 1 - a; [1, 1] }" },
+	{ 0, "{ [a, b] : a >= 0 and 0 <= b <= 1 - a; [0, 2] }" },
+	{ 0, "{ [a, b] : a >= 0 and 0 <= b <= 1 - a; [-1, 3] }" },
+	{ 1, "{ [a, b] : a, b >= 0 and a + 2b <= 2; [1, 1] }" },
+	{ 0, "{ [a, b] : a, b >= 0 and a + 2b <= 2; [2, 1] }" },
 };
 
 /* A specialized coalescing test case that would result
@@ -1893,7 +2131,7 @@ static int test_coalesce_special(struct isl_ctx *ctx)
 	    "(exists (e0 = [(-2 + y)/3]: 3e0 = -2 + y and y <= 200 and "
 		"y >= 5 and o1 <= 241 and o1 >= 212)) }";
 	map1 = isl_map_read_from_str(ctx, str);
-	map1 = isl_map_align_divs(map1);
+	map1 = isl_map_align_divs_internal(map1);
 	map1 = isl_map_coalesce(map1);
 	str = "[y] -> { [S_L220_OUT[] -> T7[]] -> "
 	    "[[S_L309_IN[] -> T11[]] -> ce_imag2[o0, o1]] : "
@@ -1902,7 +2140,7 @@ static int test_coalesce_special(struct isl_ctx *ctx)
 		"o0 >= 3 - y and o0 <= -2 + y and o0 >= 0) }";
 	map2 = isl_map_read_from_str(ctx, str);
 	map2 = isl_map_union(map2, map1);
-	map2 = isl_map_align_divs(map2);
+	map2 = isl_map_align_divs_internal(map2);
 	map2 = isl_map_coalesce(map2);
 	isl_map_free(map2);
 	if (!map2)
@@ -1937,6 +2175,44 @@ static int test_coalesce_special2(struct isl_ctx *ctx)
 	return 0;
 }
 
+/* Check that calling isl_set_coalesce does not leave other sets
+ * that may share some information with the input to isl_set_coalesce
+ * in an inconsistent state.
+ * In particular, older versions of isl would modify all copies
+ * of the basic sets in the isl_set_coalesce input in a way
+ * that could leave them in an inconsistent state.
+ * The result of printing any other set containing one of these
+ * basic sets would then result in an invalid set description.
+ */
+static int test_coalesce_special3(isl_ctx *ctx)
+{
+	const char *str;
+	char *s;
+	isl_set *set1, *set2;
+	isl_printer *p;
+
+	set1 = isl_set_read_from_str(ctx, "{ [0, 0, 0] }");
+	str = "{ [a, b, a + b] : a >= 0 and b >= 0 and 0 < a + b }";
+	set2 = isl_set_read_from_str(ctx, str);
+	set1 = isl_set_union(set1, isl_set_copy(set2));
+	set1 = isl_set_coalesce(set1);
+	isl_set_free(set1);
+
+	p = isl_printer_to_str(ctx);
+	p = isl_printer_print_set(p, set2);
+	isl_set_free(set2);
+	s = isl_printer_get_str(p);
+	isl_printer_free(p);
+	set1 = isl_set_read_from_str(ctx, s);
+	free(s);
+	isl_set_free(set1);
+
+	if (!set1)
+		return -1;
+
+	return 0;
+}
+
 /* Test the functionality of isl_set_coalesce.
  * That is, check that the output is always equal to the input
  * and in some cases that the result consists of a single disjunct.
@@ -1957,6 +2233,8 @@ static int test_coalesce(struct isl_ctx *ctx)
 	if (test_coalesce_special(ctx) < 0)
 		return -1;
 	if (test_coalesce_special2(ctx) < 0)
+		return -1;
+	if (test_coalesce_special3(ctx) < 0)
 		return -1;
 
 	return 0;
@@ -3522,8 +3800,8 @@ int test_special_schedule(isl_ctx *ctx, const char *domain,
 	return 0;
 }
 
-/* Check that the schedule map is properly padded, even after being
- * reconstructed from the band forest.
+/* Check that the schedule map is properly padded, i.e., that the range
+ * lives in a single space.
  */
 static int test_padded_schedule(isl_ctx *ctx)
 {
@@ -3532,9 +3810,9 @@ static int test_padded_schedule(isl_ctx *ctx)
 	isl_union_map *validity, *proximity;
 	isl_schedule_constraints *sc;
 	isl_schedule *sched;
-	isl_union_map *map1, *map2;
-	isl_band_list *list;
-	int equal;
+	isl_union_map *umap;
+	isl_union_set *range;
+	isl_set *set;
 
 	str = "[N] -> { S0[i] : 0 <= i <= N; S1[i, j] : 0 <= i, j <= N }";
 	D = isl_union_set_read_from_str(ctx, str);
@@ -3544,21 +3822,14 @@ static int test_padded_schedule(isl_ctx *ctx)
 	sc = isl_schedule_constraints_set_validity(sc, validity);
 	sc = isl_schedule_constraints_set_proximity(sc, proximity);
 	sched = isl_schedule_constraints_compute_schedule(sc);
-	map1 = isl_schedule_get_map(sched);
-	list = isl_schedule_get_band_forest(sched);
-	isl_band_list_free(list);
-	map2 = isl_schedule_get_map(sched);
+	umap = isl_schedule_get_map(sched);
 	isl_schedule_free(sched);
-	equal = isl_union_map_is_equal(map1, map2);
-	isl_union_map_free(map1);
-	isl_union_map_free(map2);
+	range = isl_union_map_range(umap);
+	set = isl_set_from_union_set(range);
+	isl_set_free(set);
 
-	if (equal < 0)
+	if (!set)
 		return -1;
-	if (!equal)
-		isl_die(ctx, isl_error_unknown,
-			"reconstructed schedule map not the same as original",
-			return -1);
 
 	return 0;
 }
@@ -3637,6 +3908,55 @@ static int test_special_conditional_schedule_constraints(isl_ctx *ctx)
 	if (empty)
 		isl_die(ctx, isl_error_unknown,
 			"conditional validity not respected", return -1);
+
+	return 0;
+}
+
+/* Check that the test for violated conditional validity constraints
+ * is not confused by domain compression.
+ * In particular, earlier versions of isl would apply
+ * a schedule on the compressed domains to the original domains,
+ * resulting in a failure to detect that the default schedule
+ * violates the conditional validity constraints.
+ */
+static int test_special_conditional_schedule_constraints_2(isl_ctx *ctx)
+{
+	const char *str;
+	isl_bool empty;
+	isl_union_set *domain;
+	isl_union_map *validity, *condition;
+	isl_schedule_constraints *sc;
+	isl_schedule *schedule;
+	isl_union_map *umap;
+	isl_map *map, *ge;
+
+	str = "{ A[0, i] : 0 <= i <= 10; B[1, i] : 0 <= i <= 10 }";
+	domain = isl_union_set_read_from_str(ctx, str);
+	sc = isl_schedule_constraints_on_domain(domain);
+	str = "{ B[1, i] -> A[0, i + 1] }";
+	condition = isl_union_map_read_from_str(ctx, str);
+	str = "{ A[0, i] -> B[1, i - 1] }";
+	validity = isl_union_map_read_from_str(ctx, str);
+	sc = isl_schedule_constraints_set_conditional_validity(sc, condition,
+						isl_union_map_copy(validity));
+	schedule = isl_schedule_constraints_compute_schedule(sc);
+	umap = isl_schedule_get_map(schedule);
+	isl_schedule_free(schedule);
+	validity = isl_union_map_apply_domain(validity,
+						isl_union_map_copy(umap));
+	validity = isl_union_map_apply_range(validity, umap);
+	map = isl_map_from_union_map(validity);
+	ge = isl_map_lex_ge(isl_space_domain(isl_map_get_space(map)));
+	map = isl_map_intersect(map, ge);
+	empty = isl_map_is_empty(map);
+	isl_map_free(map);
+
+	if (empty < 0)
+		return -1;
+	if (!empty)
+		isl_die(ctx, isl_error_unknown,
+			"conditional validity constraints not satisfied",
+			return -1);
 
 	return 0;
 }
@@ -3744,6 +4064,8 @@ static int test_conditional_schedule_constraints(isl_ctx *ctx)
 	int n_member;
 
 	if (test_special_conditional_schedule_constraints(ctx) < 0)
+		return -1;
+	if (test_special_conditional_schedule_constraints_2(ctx) < 0)
 		return -1;
 
 	for (i = 0; i < ARRAY_SIZE(live_range_tests); ++i) {
@@ -3891,6 +4213,56 @@ static int test_bounded_coefficients_schedule(isl_ctx *ctx)
 	return 0;
 }
 
+/* Check that the bounds on the coefficients are respected.
+ * This function checks for a particular output schedule,
+ * but the exact output is not important, only that it does
+ * not contain any coefficients greater than 4.
+ * It is, however, easier to check for a particular output.
+ * This test is only run for the whole component scheduler
+ * because the incremental scheduler produces a slightly different schedule.
+ */
+static int test_bounded_coefficients_schedule_whole(isl_ctx *ctx)
+{
+	const char *domain, *dep, *str;
+	isl_union_set *I;
+	isl_union_map *D;
+	isl_schedule_constraints *sc;
+	isl_schedule *schedule;
+	isl_union_map *sched1, *sched2;
+	isl_bool equal;
+
+	domain = "{ S_4[i, j, k] : 0 <= i < j <= 10 and 0 <= k <= 100; "
+	    "S_2[i, j] : 0 <= i < j <= 10; S_6[i, j] : 0 <= i < j <= 10 }";
+	dep = "{ S_2[0, j] -> S_4[0, j, 0] : 0 < j <= 10; "
+	    "S_4[0, j, 100] -> S_6[0, j] : 0 < j <= 10 }";
+	I = isl_union_set_read_from_str(ctx, domain);
+	D = isl_union_map_read_from_str(ctx, dep);
+	sc = isl_schedule_constraints_on_domain(I);
+	sc = isl_schedule_constraints_set_validity(sc, D);
+	isl_options_set_schedule_max_constant_term(ctx, 10);
+	isl_options_set_schedule_max_coefficient(ctx, 4);
+	schedule = isl_schedule_constraints_compute_schedule(sc);
+	isl_options_set_schedule_max_coefficient(ctx, -1);
+	isl_options_set_schedule_max_constant_term(ctx, -1);
+	sched1 = isl_schedule_get_map(schedule);
+	isl_schedule_free(schedule);
+
+	str = "{ S_4[i, j, k] -> [i, j, 10 - k]; "
+	    "S_2[i, j] -> [0, i, j]; S_6[i, j] -> [0, 10 + i, j] }";
+	sched2 = isl_union_map_read_from_str(ctx, str);
+	equal = isl_union_map_is_equal(sched1, sched2);
+	isl_union_map_free(sched1);
+	isl_union_map_free(sched2);
+
+	if (equal < 0)
+		return -1;
+	if (!equal)
+		isl_die(ctx, isl_error_unknown,
+			"unexpected schedule", return -1);
+
+	return 0;
+}
+
 /* Check that a set of schedule constraints that only allow for
  * a coalescing schedule still produces a schedule even if the user
  * request a non-coalescing schedule.  Earlier versions of isl
@@ -3919,6 +4291,28 @@ static int test_coalescing_schedule(isl_ctx *ctx)
 	if (!schedule)
 		return -1;
 	return 0;
+}
+
+/* Check that the scheduler does not perform any needless
+ * compound skewing.  Earlier versions of isl would compute
+ * schedules in terms of transformed schedule coefficients and
+ * would not accurately keep track of the sum of the original
+ * schedule coefficients.  It could then produce the schedule
+ * S[t,i,j,k] -> [t, 2t + i, 2t + i + j, 2t + i + j + k]
+ * for the input below instead of the schedule below.
+ */
+static int test_skewing_schedule(isl_ctx *ctx)
+{
+	const char *D, *V, *P, *S;
+
+	D = "[n] -> { S[t,i,j,k] : 0 <= t,i,j,k < n }";
+	V = "[n] -> { S[t,i,j,k] -> S[t+1,a,b,c] : 0 <= t,i,j,k,a,b,c < n and "
+		"-2 <= a-i <= 2 and -1 <= a-i + b-j <= 1 and "
+		"-1 <= a-i + b-j + c-k <= 1 }";
+	P = "{ }";
+	S = "{ S[t,i,j,k] -> [t, 2t + i, t + i + j, 2t + k] }";
+
+	return test_special_schedule(ctx, D, V, P, S);
 }
 
 int test_schedule(isl_ctx *ctx)
@@ -4135,13 +4529,10 @@ int test_schedule(isl_ctx *ctx)
 		"i0 >= 0 and i0 <= 1 and i1 >= 0 and o2 >= -i1 + i2 and "
 		"o2 >= 1 and o2 <= 6 - i1 and i2 >= 1 + i1 }";
 	P = V;
-	S = "{ Stmt_for_body24[i0, i1, i2, i3] -> "
-		"[i0, 5i0 + i1, 6i0 + i1 + i2, 1 + 6i0 + i1 + i2 + i3, 1];"
-	    "Stmt_for_body7[i0, i1, i2] -> [0, 5i0, 6i0 + i1, 6i0 + i2, 0] }";
 
 	treat_coalescing = isl_options_get_schedule_treat_coalescing(ctx);
 	isl_options_set_schedule_treat_coalescing(ctx, 0);
-	if (test_special_schedule(ctx, D, V, P, S) < 0)
+	if (test_has_schedule(ctx, D, V, P) < 0)
 		return -1;
 	isl_options_set_schedule_treat_coalescing(ctx, treat_coalescing);
 
@@ -4151,7 +4542,7 @@ int test_schedule(isl_ctx *ctx)
 		"S_0[i, j] -> S_0[1 + i, j] : i >= 1 and i <= 9 and "
 					     "j >= 1 and j <= 8 }";
 	P = "{ }";
-	S = "{ S_0[i, j] -> [i + j, j] }";
+	S = "{ S_0[i, j] -> [i + j, i] }";
 	ctx->opt->schedule_algorithm = ISL_SCHEDULE_ALGORITHM_FEAUTRIER;
 	if (test_special_schedule(ctx, D, V, P, S) < 0)
 		return -1;
@@ -4231,6 +4622,8 @@ int test_schedule(isl_ctx *ctx)
 		return -1;
 	if (test_coalescing_schedule(ctx) < 0)
 		return -1;
+	if (test_skewing_schedule(ctx) < 0)
+		return -1;
 
 	return 0;
 }
@@ -4245,6 +4638,8 @@ static int test_schedule_whole(isl_ctx *ctx)
 	whole = isl_options_get_schedule_whole_component(ctx);
 	isl_options_set_schedule_whole_component(ctx, 1);
 	r = test_schedule(ctx);
+	if (r >= 0)
+		r = test_bounded_coefficients_schedule_whole(ctx);
 	isl_options_set_schedule_whole_component(ctx, whole);
 
 	return r;
@@ -4344,6 +4739,82 @@ static int aff_check_plain_equal(__isl_keep isl_aff *aff, const char *str)
 	return 0;
 }
 
+/* Is "upa" obviously equal to the isl_union_pw_aff represented by "str"?
+ */
+static isl_bool union_pw_aff_plain_is_equal(__isl_keep isl_union_pw_aff *upa,
+	const char *str)
+{
+	isl_ctx *ctx;
+	isl_union_pw_aff *upa2;
+	isl_bool equal;
+
+	if (!upa)
+		return isl_bool_error;
+
+	ctx = isl_union_pw_aff_get_ctx(upa);
+	upa2 = isl_union_pw_aff_read_from_str(ctx, str);
+	equal = isl_union_pw_aff_plain_is_equal(upa, upa2);
+	isl_union_pw_aff_free(upa2);
+
+	return equal;
+}
+
+/* Check that "upa" is obviously equal to the isl_union_pw_aff
+ * represented by "str".
+ */
+static isl_stat union_pw_aff_check_plain_equal(__isl_keep isl_union_pw_aff *upa,
+	const char *str)
+{
+	isl_bool equal;
+
+	equal = union_pw_aff_plain_is_equal(upa, str);
+	if (equal < 0)
+		return isl_stat_error;
+	if (!equal)
+		isl_die(isl_union_pw_aff_get_ctx(upa), isl_error_unknown,
+			"result not as expected", return isl_stat_error);
+	return isl_stat_ok;
+}
+
+/* Basic tests on isl_union_pw_aff.
+ *
+ * In particular, check that isl_union_pw_aff_aff_on_domain
+ * aligns the parameters of the input objects and
+ * that isl_union_pw_aff_param_on_domain_id properly
+ * introduces the parameter.
+ */
+static int test_upa(isl_ctx *ctx)
+{
+	const char *str;
+	isl_id *id;
+	isl_aff *aff;
+	isl_union_set *domain;
+	isl_union_pw_aff *upa;
+	isl_stat ok;
+
+	aff = isl_aff_read_from_str(ctx, "[N] -> { [N] }");
+	str = "[M] -> { A[i] : 0 <= i < M; B[] }";
+	domain = isl_union_set_read_from_str(ctx, str);
+	upa = isl_union_pw_aff_aff_on_domain(domain, aff);
+	str = "[N, M] -> { A[i] -> [N] : 0 <= i < M; B[] -> [N] }";
+	ok = union_pw_aff_check_plain_equal(upa, str);
+	isl_union_pw_aff_free(upa);
+	if (ok < 0)
+		return -1;
+
+	id = isl_id_alloc(ctx, "N", NULL);
+	str = "[M] -> { A[i] : 0 <= i < M; B[] }";
+	domain = isl_union_set_read_from_str(ctx, str);
+	upa = isl_union_pw_aff_param_on_domain_id(domain, id);
+	str = "[N, M] -> { A[i] -> [N] : 0 <= i < M; B[] -> [N] }";
+	ok = union_pw_aff_check_plain_equal(upa, str);
+	isl_union_pw_aff_free(upa);
+	if (ok < 0)
+		return -1;
+
+	return 0;
+}
+
 struct {
 	__isl_give isl_aff *(*fn)(__isl_take isl_aff *aff1,
 				__isl_take isl_aff *aff2);
@@ -4420,6 +4891,67 @@ static int test_bin_aff(isl_ctx *ctx)
 			ok = isl_aff_plain_is_equal(aff1, res);
 		isl_aff_free(aff1);
 		isl_aff_free(res);
+		if (ok < 0)
+			return -1;
+		if (!ok)
+			isl_die(ctx, isl_error_unknown,
+				"unexpected result", return -1);
+	}
+
+	return 0;
+}
+
+struct {
+	__isl_give isl_pw_aff *(*fn)(__isl_take isl_pw_aff *pa1,
+				     __isl_take isl_pw_aff *pa2);
+} pw_aff_bin_op[] = {
+	['m'] = { &isl_pw_aff_min },
+	['M'] = { &isl_pw_aff_max },
+};
+
+/* Inputs for binary isl_pw_aff operation tests.
+ * "arg1" and "arg2" are the two arguments, "op" identifies the operation
+ * defined by pw_aff_bin_op, and "res" is the expected result.
+ */
+struct {
+	const char *arg1;
+	unsigned char op;
+	const char *arg2;
+	const char *res;
+} pw_aff_bin_tests[] = {
+	{ "{ [i] -> [i] }", 'm', "{ [i] -> [i] }",
+	  "{ [i] -> [i] }" },
+	{ "{ [i] -> [i] }", 'M', "{ [i] -> [i] }",
+	  "{ [i] -> [i] }" },
+	{ "{ [i] -> [i] }", 'm', "{ [i] -> [0] }",
+	  "{ [i] -> [i] : i <= 0; [i] -> [0] : i > 0 }" },
+	{ "{ [i] -> [i] }", 'M', "{ [i] -> [0] }",
+	  "{ [i] -> [i] : i >= 0; [i] -> [0] : i < 0 }" },
+	{ "{ [i] -> [i] }", 'm', "{ [i] -> [NaN] }",
+	  "{ [i] -> [NaN] }" },
+	{ "{ [i] -> [NaN] }", 'm', "{ [i] -> [i] }",
+	  "{ [i] -> [NaN] }" },
+};
+
+/* Perform some basic tests of binary operations on isl_pw_aff objects.
+ */
+static int test_bin_pw_aff(isl_ctx *ctx)
+{
+	int i;
+	isl_bool ok;
+	isl_pw_aff *pa1, *pa2, *res;
+
+	for (i = 0; i < ARRAY_SIZE(pw_aff_bin_tests); ++i) {
+		pa1 = isl_pw_aff_read_from_str(ctx, pw_aff_bin_tests[i].arg1);
+		pa2 = isl_pw_aff_read_from_str(ctx, pw_aff_bin_tests[i].arg2);
+		res = isl_pw_aff_read_from_str(ctx, pw_aff_bin_tests[i].res);
+		pa1 = pw_aff_bin_op[pw_aff_bin_tests[i].op].fn(pa1, pa2);
+		if (isl_pw_aff_involves_nan(res))
+			ok = isl_pw_aff_involves_nan(pa1);
+		else
+			ok = isl_pw_aff_plain_is_equal(pa1, res);
+		isl_pw_aff_free(pa1);
+		isl_pw_aff_free(res);
 		if (ok < 0)
 			return -1;
 		if (!ok)
@@ -4527,6 +5059,955 @@ static int test_bin_upma_fail(isl_ctx *ctx)
 	return 0;
 }
 
+/* Inputs for basic tests of unary operations on isl_multi_pw_aff objects.
+ * "fn" is the function that is tested.
+ * "arg" is a string description of the input.
+ * "res" is a string description of the expected result.
+ */
+struct {
+	__isl_give isl_multi_pw_aff *(*fn)(__isl_take isl_multi_pw_aff *mpa);
+	const char *arg;
+	const char *res;
+} mpa_un_tests[] = {
+	{ &isl_multi_pw_aff_range_factor_domain,
+	  "{ A[x] -> [B[(1 : x >= 5)] -> C[(2 : x <= 10)]] }",
+	  "{ A[x] -> B[(1 : x >= 5)] }" },
+	{ &isl_multi_pw_aff_range_factor_range,
+	  "{ A[x] -> [B[(1 : x >= 5)] -> C[(2 : x <= 10)]] }",
+	  "{ A[y] -> C[(2 : y <= 10)] }" },
+	{ &isl_multi_pw_aff_range_factor_domain,
+	  "{ A[x] -> [B[(1 : x >= 5)] -> C[]] }",
+	  "{ A[x] -> B[(1 : x >= 5)] }" },
+	{ &isl_multi_pw_aff_range_factor_range,
+	  "{ A[x] -> [B[(1 : x >= 5)] -> C[]] }",
+	  "{ A[y] -> C[] }" },
+	{ &isl_multi_pw_aff_range_factor_domain,
+	  "{ A[x] -> [B[] -> C[(2 : x <= 10)]] }",
+	  "{ A[x] -> B[] }" },
+	{ &isl_multi_pw_aff_range_factor_range,
+	  "{ A[x] -> [B[] -> C[(2 : x <= 10)]] }",
+	  "{ A[y] -> C[(2 : y <= 10)] }" },
+	{ &isl_multi_pw_aff_range_factor_domain,
+	  "{ A[x] -> [B[] -> C[]] }",
+	  "{ A[x] -> B[] }" },
+	{ &isl_multi_pw_aff_range_factor_range,
+	  "{ A[x] -> [B[] -> C[]] }",
+	  "{ A[y] -> C[] }" },
+	{ &isl_multi_pw_aff_factor_range,
+	  "{ [B[] -> C[]] }",
+	  "{ C[] }" },
+	{ &isl_multi_pw_aff_range_factor_domain,
+	  "{ A[x] -> [B[] -> C[]] : x >= 0 }",
+	  "{ A[x] -> B[] : x >= 0 }" },
+	{ &isl_multi_pw_aff_range_factor_range,
+	  "{ A[x] -> [B[] -> C[]] : x >= 0 }",
+	  "{ A[y] -> C[] : y >= 0 }" },
+	{ &isl_multi_pw_aff_factor_range,
+	  "[N] -> { [B[] -> C[]] : N >= 0 }",
+	  "[N] -> { C[] : N >= 0 }" },
+};
+
+/* Perform some basic tests of unary operations on isl_multi_pw_aff objects.
+ */
+static int test_un_mpa(isl_ctx *ctx)
+{
+	int i;
+	isl_bool ok;
+	isl_multi_pw_aff *mpa, *res;
+
+	for (i = 0; i < ARRAY_SIZE(mpa_un_tests); ++i) {
+		mpa = isl_multi_pw_aff_read_from_str(ctx, mpa_un_tests[i].arg);
+		res = isl_multi_pw_aff_read_from_str(ctx, mpa_un_tests[i].res);
+		mpa = mpa_un_tests[i].fn(mpa);
+		ok = isl_multi_pw_aff_plain_is_equal(mpa, res);
+		isl_multi_pw_aff_free(mpa);
+		isl_multi_pw_aff_free(res);
+		if (ok < 0)
+			return -1;
+		if (!ok)
+			isl_die(ctx, isl_error_unknown,
+				"unexpected result", return -1);
+	}
+
+	return 0;
+}
+
+/* Inputs for basic tests of binary operations on isl_multi_pw_aff objects.
+ * "fn" is the function that is tested.
+ * "arg1" and "arg2" are string descriptions of the inputs.
+ * "res" is a string description of the expected result.
+ */
+struct {
+	__isl_give isl_multi_pw_aff *(*fn)(
+		__isl_take isl_multi_pw_aff *mpa1,
+		__isl_take isl_multi_pw_aff *mpa2);
+	const char *arg1;
+	const char *arg2;
+	const char *res;
+} mpa_bin_tests[] = {
+	{ &isl_multi_pw_aff_add, "{ A[] -> [1] }", "{ A[] -> [2] }",
+	  "{ A[] -> [3] }" },
+	{ &isl_multi_pw_aff_add, "{ A[x] -> [(1 : x >= 5)] }",
+	  "{ A[x] -> [(x : x <= 10)] }",
+	  "{ A[x] -> [(1 + x : 5 <= x <= 10)] }" },
+	{ &isl_multi_pw_aff_add, "{ A[x] -> [] : x >= 5 }",
+	  "{ A[x] -> [] : x <= 10 }",
+	  "{ A[x] -> [] : 5 <= x <= 10 }" },
+	{ &isl_multi_pw_aff_add, "{ A[x] -> [] : x >= 5 }",
+	  "[N] -> { A[x] -> [] : x <= N }",
+	  "[N] -> { A[x] -> [] : 5 <= x <= N }" },
+	{ &isl_multi_pw_aff_add,
+	  "[N] -> { A[x] -> [] : x <= N }",
+	  "{ A[x] -> [] : x >= 5 }",
+	  "[N] -> { A[x] -> [] : 5 <= x <= N }" },
+	{ &isl_multi_pw_aff_range_product, "{ A[x] -> B[(1 : x >= 5)] }",
+	  "{ A[y] -> C[(2 : y <= 10)] }",
+	  "{ A[x] -> [B[(1 : x >= 5)] -> C[(2 : x <= 10)]] }" },
+	{ &isl_multi_pw_aff_range_product, "{ A[x] -> B[1] : x >= 5 }",
+	  "{ A[y] -> C[2] : y <= 10 }",
+	  "{ A[x] -> [B[(1 : x >= 5)] -> C[(2 : x <= 10)]] }" },
+	{ &isl_multi_pw_aff_range_product, "{ A[x] -> B[1] : x >= 5 }",
+	  "[N] -> { A[y] -> C[2] : y <= N }",
+	  "[N] -> { A[x] -> [B[(1 : x >= 5)] -> C[(2 : x <= N)]] }" },
+	{ &isl_multi_pw_aff_range_product, "[N] -> { A[x] -> B[1] : x >= N }",
+	  "{ A[y] -> C[2] : y <= 10 }",
+	  "[N] -> { A[x] -> [B[(1 : x >= N)] -> C[(2 : x <= 10)]] }" },
+	{ &isl_multi_pw_aff_range_product, "{ A[] -> B[1] }", "{ A[] -> C[2] }",
+	  "{ A[] -> [B[1] -> C[2]] }" },
+	{ &isl_multi_pw_aff_range_product, "{ A[] -> B[] }", "{ A[] -> C[] }",
+	  "{ A[] -> [B[] -> C[]] }" },
+	{ &isl_multi_pw_aff_range_product, "{ A[x] -> B[(1 : x >= 5)] }",
+	  "{ A[y] -> C[] : y <= 10 }",
+	  "{ A[x] -> [B[(1 : x >= 5)] -> C[]] : x <= 10 }" },
+	{ &isl_multi_pw_aff_range_product, "{ A[y] -> C[] : y <= 10 }",
+	  "{ A[x] -> B[(1 : x >= 5)] }",
+	  "{ A[x] -> [C[] -> B[(1 : x >= 5)]] : x <= 10 }" },
+	{ &isl_multi_pw_aff_product, "{ A[x] -> B[(1 : x >= 5)] }",
+	  "{ A[y] -> C[(2 : y <= 10)] }",
+	  "{ [A[x] -> A[y]] -> [B[(1 : x >= 5)] -> C[(2 : y <= 10)]] }" },
+	{ &isl_multi_pw_aff_product, "{ A[x] -> B[(1 : x >= 5)] }",
+	  "{ A[y] -> C[] : y <= 10 }",
+	  "{ [A[x] -> A[y]] -> [B[(1 : x >= 5)] -> C[]] : y <= 10 }" },
+	{ &isl_multi_pw_aff_product, "{ A[y] -> C[] : y <= 10 }",
+	  "{ A[x] -> B[(1 : x >= 5)] }",
+	  "{ [A[y] -> A[x]] -> [C[] -> B[(1 : x >= 5)]] : y <= 10 }" },
+	{ &isl_multi_pw_aff_product, "{ A[x] -> B[(1 : x >= 5)] }",
+	  "[N] -> { A[y] -> C[] : y <= N }",
+	  "[N] -> { [A[x] -> A[y]] -> [B[(1 : x >= 5)] -> C[]] : y <= N }" },
+	{ &isl_multi_pw_aff_product, "[N] -> { A[y] -> C[] : y <= N }",
+	  "{ A[x] -> B[(1 : x >= 5)] }",
+	  "[N] -> { [A[y] -> A[x]] -> [C[] -> B[(1 : x >= 5)]] : y <= N }" },
+	{ &isl_multi_pw_aff_product, "{ A[x] -> B[] : x >= 5 }",
+	  "{ A[y] -> C[] : y <= 10 }",
+	  "{ [A[x] -> A[y]] -> [B[] -> C[]] : x >= 5 and y <= 10 }" },
+	{ &isl_multi_pw_aff_product, "{ A[] -> B[1] }", "{ A[] -> C[2] }",
+	  "{ [A[] -> A[]] -> [B[1] -> C[2]] }" },
+	{ &isl_multi_pw_aff_product, "{ A[] -> B[] }", "{ A[] -> C[] }",
+	  "{ [A[] -> A[]] -> [B[] -> C[]] }" },
+	{ &isl_multi_pw_aff_pullback_multi_pw_aff,
+	  "{ B[i,j] -> C[i + 2j] }", "{ A[a,b] -> B[b,a] }",
+	  "{ A[a,b] -> C[b + 2a] }" },
+	{ &isl_multi_pw_aff_pullback_multi_pw_aff,
+	  "{ B[i,j] -> C[i + 2j] }",
+	  "{ A[a,b] -> B[(b : b > a),(a : b > a)] }",
+	  "{ A[a,b] -> C[(b + 2a : b > a)] }" },
+	{ &isl_multi_pw_aff_pullback_multi_pw_aff,
+	  "{ B[i,j] -> C[(i + 2j : j > 4)] }",
+	  "{ A[a,b] -> B[(b : b > a),(a : b > a)] }",
+	  "{ A[a,b] -> C[(b + 2a : b > a > 4)] }" },
+	{ &isl_multi_pw_aff_pullback_multi_pw_aff,
+	  "{ B[i,j] -> C[] }",
+	  "{ A[a,b] -> B[(b : b > a),(a : b > a)] }",
+	  "{ A[a,b] -> C[] }" },
+	{ &isl_multi_pw_aff_pullback_multi_pw_aff,
+	  "{ B[i,j] -> C[] : i > j }",
+	  "{ A[a,b] -> B[b,a] }",
+	  "{ A[a,b] -> C[] : b > a }" },
+	{ &isl_multi_pw_aff_pullback_multi_pw_aff,
+	  "{ B[i,j] -> C[] : j > 5 }",
+	  "{ A[a,b] -> B[(b : b > a),(a : b > a)] }",
+	  "{ A[a,b] -> C[] : b > a > 5 }" },
+	{ &isl_multi_pw_aff_pullback_multi_pw_aff,
+	  "[N] -> { B[i,j] -> C[] : j > N }",
+	  "{ A[a,b] -> B[(b : b > a),(a : b > a)] }",
+	  "[N] -> { A[a,b] -> C[] : b > a > N }" },
+	{ &isl_multi_pw_aff_pullback_multi_pw_aff,
+	  "[M,N] -> { B[] -> C[] : N > 5 }",
+	  "[M,N] -> { A[] -> B[] : M > N }",
+	  "[M,N] -> { A[] -> C[] : M > N > 5 }" },
+};
+
+/* Perform some basic tests of binary operations on isl_multi_pw_aff objects.
+ */
+static int test_bin_mpa(isl_ctx *ctx)
+{
+	int i;
+	isl_bool ok;
+	isl_multi_pw_aff *mpa1, *mpa2, *res;
+
+	for (i = 0; i < ARRAY_SIZE(mpa_bin_tests); ++i) {
+		mpa1 = isl_multi_pw_aff_read_from_str(ctx,
+							mpa_bin_tests[i].arg1);
+		mpa2 = isl_multi_pw_aff_read_from_str(ctx,
+							mpa_bin_tests[i].arg2);
+		res = isl_multi_pw_aff_read_from_str(ctx,
+							mpa_bin_tests[i].res);
+		mpa1 = mpa_bin_tests[i].fn(mpa1, mpa2);
+		ok = isl_multi_pw_aff_plain_is_equal(mpa1, res);
+		isl_multi_pw_aff_free(mpa1);
+		isl_multi_pw_aff_free(res);
+		if (ok < 0)
+			return -1;
+		if (!ok)
+			isl_die(ctx, isl_error_unknown,
+				"unexpected result", return -1);
+	}
+
+	return 0;
+}
+
+/* Inputs for basic tests of unary operations on
+ * isl_multi_union_pw_aff objects.
+ * "fn" is the function that is tested.
+ * "arg" is a string description of the input.
+ * "res" is a string description of the expected result.
+ */
+struct {
+	__isl_give isl_multi_union_pw_aff *(*fn)(
+		__isl_take isl_multi_union_pw_aff *mupa);
+	const char *arg;
+	const char *res;
+} mupa_un_tests[] = {
+	{ &isl_multi_union_pw_aff_factor_range,
+	  "[B[{ A[] -> [1] }] -> C[{ A[] -> [2] }]]",
+	  "C[{ A[] -> [2] }]" },
+	{ &isl_multi_union_pw_aff_factor_range,
+	  "[B[] -> C[{ A[] -> [2] }]]",
+	  "C[{ A[] -> [2] }]" },
+	{ &isl_multi_union_pw_aff_factor_range,
+	  "[B[{ A[] -> [1] }] -> C[]]",
+	  "C[]" },
+	{ &isl_multi_union_pw_aff_factor_range,
+	  "[B[] -> C[]]",
+	  "C[]" },
+	{ &isl_multi_union_pw_aff_factor_range,
+	  "([B[] -> C[]] : { A[x] : x >= 0 })",
+	  "(C[] : { A[x] : x >= 0 })" },
+	{ &isl_multi_union_pw_aff_factor_range,
+	  "[N] -> ([B[] -> C[]] : { A[x] : x <= N })",
+	  "[N] -> (C[] : { A[x] : x <= N })" },
+	{ &isl_multi_union_pw_aff_factor_range,
+	  "[N] -> ([B[] -> C[]] : { : N >= 0 })",
+	  "[N] -> (C[] : { : N >= 0 })" },
+};
+
+/* Perform some basic tests of unary operations on
+ * isl_multi_union_pw_aff objects.
+ */
+static int test_un_mupa(isl_ctx *ctx)
+{
+	int i;
+	isl_bool ok;
+	isl_multi_union_pw_aff *mupa, *res;
+
+	for (i = 0; i < ARRAY_SIZE(mupa_un_tests); ++i) {
+		mupa = isl_multi_union_pw_aff_read_from_str(ctx,
+							mupa_un_tests[i].arg);
+		res = isl_multi_union_pw_aff_read_from_str(ctx,
+							mupa_un_tests[i].res);
+		mupa = mupa_un_tests[i].fn(mupa);
+		ok = isl_multi_union_pw_aff_plain_is_equal(mupa, res);
+		isl_multi_union_pw_aff_free(mupa);
+		isl_multi_union_pw_aff_free(res);
+		if (ok < 0)
+			return -1;
+		if (!ok)
+			isl_die(ctx, isl_error_unknown,
+				"unexpected result", return -1);
+	}
+
+	return 0;
+}
+
+/* Inputs for basic tests of binary operations on
+ * isl_multi_union_pw_aff objects.
+ * "fn" is the function that is tested.
+ * "arg1" and "arg2" are string descriptions of the inputs.
+ * "res" is a string description of the expected result.
+ */
+struct {
+	__isl_give isl_multi_union_pw_aff *(*fn)(
+		__isl_take isl_multi_union_pw_aff *mupa1,
+		__isl_take isl_multi_union_pw_aff *mupa2);
+	const char *arg1;
+	const char *arg2;
+	const char *res;
+} mupa_bin_tests[] = {
+	{ &isl_multi_union_pw_aff_add, "[{ A[] -> [1] }]", "[{ A[] -> [2] }]",
+	  "[{ A[] -> [3] }]" },
+	{ &isl_multi_union_pw_aff_sub, "[{ A[] -> [1] }]", "[{ A[] -> [2] }]",
+	  "[{ A[] -> [-1] }]" },
+	{ &isl_multi_union_pw_aff_add,
+	  "[{ A[] -> [1]; B[] -> [4] }]",
+	  "[{ A[] -> [2]; C[] -> [5] }]",
+	  "[{ A[] -> [3] }]" },
+	{ &isl_multi_union_pw_aff_union_add,
+	  "[{ A[] -> [1]; B[] -> [4] }]",
+	  "[{ A[] -> [2]; C[] -> [5] }]",
+	  "[{ A[] -> [3]; B[] -> [4]; C[] -> [5] }]" },
+	{ &isl_multi_union_pw_aff_add, "[{ A[x] -> [(1)] : x >= 5 }]",
+	  "[{ A[x] -> [(x)] : x <= 10 }]",
+	  "[{ A[x] -> [(1 + x)] : 5 <= x <= 10 }]" },
+	{ &isl_multi_union_pw_aff_add, "([] : { A[x] : x >= 5 })",
+	  "([] : { A[x] : x <= 10 })",
+	  "([] : { A[x] : 5 <= x <= 10 })" },
+	{ &isl_multi_union_pw_aff_add, "([] : { A[x] : x >= 5 })",
+	  "[N] -> ([] : { A[x] : x <= N })",
+	  "[N] -> ([] : { A[x] : 5 <= x <= N })" },
+	{ &isl_multi_union_pw_aff_add, "[N] -> ([] : { A[x] : x >= N })",
+	  "([] : { A[x] : x <= 10 })",
+	  "[N] -> ([] : { A[x] : N <= x <= 10 })" },
+	{ &isl_multi_union_pw_aff_union_add, "[{ A[x] -> [(1)] : x >= 5 }]",
+	  "[{ A[x] -> [(x)] : x <= 10 }]",
+	  "[{ A[x] -> [(1 + x)] : 5 <= x <= 10; "
+	     "A[x] -> [(1)] : x > 10; A[x] -> [(x)] : x < 5 }]" },
+	{ &isl_multi_union_pw_aff_union_add, "([] : { A[x] : x >= 5 })",
+	  "([] : { A[x] : x <= 10 })",
+	  "([] : { A[x] })" },
+	{ &isl_multi_union_pw_aff_union_add, "([] : { A[x] : x >= 0 })",
+	  "[N] -> ([] : { A[x] : x >= N })",
+	  "[N] -> ([] : { A[x] : x >= 0 or x >= N })" },
+	{ &isl_multi_union_pw_aff_union_add,
+	  "[N] -> ([] : { A[] : N >= 0})",
+	  "[N] -> ([] : { A[] : N <= 0})",
+	  "[N] -> ([] : { A[] })" },
+	{ &isl_multi_union_pw_aff_union_add,
+	  "[N] -> ([] : { A[] })",
+	  "[N] -> ([] : { : })",
+	  "[N] -> ([] : { : })" },
+	{ &isl_multi_union_pw_aff_union_add,
+	  "[N] -> ([] : { : })",
+	  "[N] -> ([] : { A[] })",
+	  "[N] -> ([] : { : })" },
+	{ &isl_multi_union_pw_aff_union_add,
+	  "[N] -> ([] : { : N >= 0})",
+	  "[N] -> ([] : { : N <= 0})",
+	  "[N] -> ([] : { : })" },
+	{ &isl_multi_union_pw_aff_range_product,
+	  "B[{ A[] -> [1] }]",
+	  "C[{ A[] -> [2] }]",
+	  "[B[{ A[] -> [1] }] -> C[{ A[] -> [2] }]]" },
+	{ &isl_multi_union_pw_aff_range_product,
+	  "(B[] : { A[x] : x >= 5 })",
+	  "(C[] : { A[x] : x <= 10 })",
+	  "([B[] -> C[]] : { A[x] : 5 <= x <= 10 })" },
+	{ &isl_multi_union_pw_aff_range_product,
+	  "B[{ A[x] -> [x + 1] : x >= 5 }]",
+	  "(C[] : { A[x] : x <= 10 })",
+	  "[B[{ A[x] -> [x + 1] : 5 <= x <= 10 }] -> C[]]" },
+	{ &isl_multi_union_pw_aff_range_product,
+	  "(C[] : { A[x] : x <= 10 })",
+	  "B[{ A[x] -> [x + 1] : x >= 5 }]",
+	  "[C[] -> B[{ A[x] -> [x + 1] : 5 <= x <= 10 }]]" },
+	{ &isl_multi_union_pw_aff_range_product,
+	  "B[{ A[x] -> [x + 1] : x >= 5 }]",
+	  "[N] -> (C[] : { A[x] : x <= N })",
+	  "[N] -> [B[{ A[x] -> [x + 1] : 5 <= x <= N }] -> C[]]" },
+	{ &isl_multi_union_pw_aff_range_product,
+	  "[N] -> (C[] : { A[x] : x <= N })",
+	  "B[{ A[x] -> [x + 1] : x >= 5 }]",
+	  "[N] -> [C[] -> B[{ A[x] -> [x + 1] : 5 <= x <= N }]]" },
+	{ &isl_multi_union_pw_aff_range_product,
+	  "B[{ A[] -> [1]; D[] -> [3] }]",
+	  "C[{ A[] -> [2] }]",
+	  "[B[{ A[] -> [1]; D[] -> [3] }] -> C[{ A[] -> [2] }]]" },
+};
+
+/* Perform some basic tests of binary operations on
+ * isl_multi_union_pw_aff objects.
+ */
+static int test_bin_mupa(isl_ctx *ctx)
+{
+	int i;
+	isl_bool ok;
+	isl_multi_union_pw_aff *mupa1, *mupa2, *res;
+
+	for (i = 0; i < ARRAY_SIZE(mupa_bin_tests); ++i) {
+		mupa1 = isl_multi_union_pw_aff_read_from_str(ctx,
+							mupa_bin_tests[i].arg1);
+		mupa2 = isl_multi_union_pw_aff_read_from_str(ctx,
+							mupa_bin_tests[i].arg2);
+		res = isl_multi_union_pw_aff_read_from_str(ctx,
+							mupa_bin_tests[i].res);
+		mupa1 = mupa_bin_tests[i].fn(mupa1, mupa2);
+		ok = isl_multi_union_pw_aff_plain_is_equal(mupa1, res);
+		isl_multi_union_pw_aff_free(mupa1);
+		isl_multi_union_pw_aff_free(res);
+		if (ok < 0)
+			return -1;
+		if (!ok)
+			isl_die(ctx, isl_error_unknown,
+				"unexpected result", return -1);
+	}
+
+	return 0;
+}
+
+/* Inputs for basic tests of binary operations on
+ * pairs of isl_multi_union_pw_aff and isl_set objects.
+ * "fn" is the function that is tested.
+ * "arg1" and "arg2" are string descriptions of the inputs.
+ * "res" is a string description of the expected result.
+ */
+struct {
+	__isl_give isl_multi_union_pw_aff *(*fn)(
+		__isl_take isl_multi_union_pw_aff *mupa,
+		__isl_take isl_set *set);
+	const char *arg1;
+	const char *arg2;
+	const char *res;
+} mupa_set_tests[] = {
+	{ &isl_multi_union_pw_aff_intersect_range,
+	  "C[{ B[i,j] -> [i + 2j] }]", "{ C[1] }",
+	  "C[{ B[i,j] -> [i + 2j] : i + 2j = 1 }]" },
+	{ &isl_multi_union_pw_aff_intersect_range,
+	  "C[{ B[i,j] -> [i + 2j] }]", "[N] -> { C[N] }",
+	  "[N] -> C[{ B[i,j] -> [i + 2j] : i + 2j = N }]" },
+	{ &isl_multi_union_pw_aff_intersect_range,
+	  "[N] -> C[{ B[i,j] -> [i + 2j + N] }]", "{ C[1] }",
+	  "[N] -> C[{ B[i,j] -> [i + 2j + N] : i + 2j + N = 1 }]" },
+	{ &isl_multi_union_pw_aff_intersect_range,
+	  "C[{ B[i,j] -> [i + 2j] }]", "[N] -> { C[x] : N >= 0 }",
+	  "[N] -> C[{ B[i,j] -> [i + 2j] : N >= 0 }]" },
+	{ &isl_multi_union_pw_aff_intersect_range,
+	  "C[]", "{ C[] }", "C[]" },
+	{ &isl_multi_union_pw_aff_intersect_range,
+	  "[N] -> (C[] : { : N >= 0 })",
+	  "{ C[] }",
+	  "[N] -> (C[] : { : N >= 0 })" },
+	{ &isl_multi_union_pw_aff_intersect_range,
+	  "(C[] : { A[a,b] })",
+	  "{ C[] }",
+	  "(C[] : { A[a,b] })" },
+	{ &isl_multi_union_pw_aff_intersect_range,
+	  "[N] -> (C[] : { A[a,b] : a,b <= N })",
+	  "{ C[] }",
+	  "[N] -> (C[] : { A[a,b] : a,b <= N })" },
+	{ &isl_multi_union_pw_aff_intersect_range,
+	  "C[]",
+	  "[N] -> { C[] : N >= 0 }",
+	  "[N] -> (C[] : { : N >= 0 })" },
+	{ &isl_multi_union_pw_aff_intersect_range,
+	  "(C[] : { A[a,b] })",
+	  "[N] -> { C[] : N >= 0 }",
+	  "[N] -> (C[] : { A[a,b] : N >= 0 })" },
+	{ &isl_multi_union_pw_aff_intersect_range,
+	  "[N] -> (C[] : { : N >= 0 })",
+	  "[N] -> { C[] : N < 1024 }",
+	  "[N] -> (C[] : { : 0 <= N < 1024 })" },
+	{ &isl_multi_union_pw_aff_intersect_params,
+	  "C[{ B[i,j] -> [i + 2j] }]", "[N] -> { : N >= 0 }",
+	  "[N] -> C[{ B[i,j] -> [i + 2j] : N >= 0}]" },
+	{ &isl_multi_union_pw_aff_intersect_params,
+	  "[N] -> C[{ B[i,j] -> [i + 2j] : N <= 256 }]", "[N] -> { : N >= 0 }",
+	  "[N] -> C[{ B[i,j] -> [i + 2j] : 0 <= N <= 256 }]" },
+	{ &isl_multi_union_pw_aff_intersect_params,
+	  "[N] -> C[{ B[i,j] -> [i + 2j] : N <= 256 }]", "{ : }",
+	  "[N] -> C[{ B[i,j] -> [i + 2j] : N <= 256 }]" },
+	{ &isl_multi_union_pw_aff_intersect_params,
+	  "C[]", "[N] -> { : N >= 0 }",
+	  "[N] -> (C[] : { : N >= 0 })" },
+	{ &isl_multi_union_pw_aff_intersect_params,
+	  "(C[] : { A[a,b] })", "[N] -> { : N >= 0 }",
+	  "[N] -> (C[] : { A[a,b] : N >= 0 })" },
+	{ &isl_multi_union_pw_aff_intersect_params,
+	  "[N] -> (C[] : { A[a,N] })", "{ : }",
+	  "[N] -> (C[] : { A[a,N] })" },
+	{ &isl_multi_union_pw_aff_intersect_params,
+	  "[N] -> (C[] : { A[a,b] : N <= 256 })", "[N] -> { : N >= 0 }",
+	  "[N] -> (C[] : { A[a,b] : 0 <= N <= 256 })" },
+};
+
+/* Perform some basic tests of binary operations on
+ * pairs of isl_multi_union_pw_aff and isl_set objects.
+ */
+static int test_mupa_set(isl_ctx *ctx)
+{
+	int i;
+	isl_bool ok;
+	isl_multi_union_pw_aff *mupa, *res;
+	isl_set *set;
+
+	for (i = 0; i < ARRAY_SIZE(mupa_set_tests); ++i) {
+		mupa = isl_multi_union_pw_aff_read_from_str(ctx,
+						    mupa_set_tests[i].arg1);
+		set = isl_set_read_from_str(ctx, mupa_set_tests[i].arg2);
+		res = isl_multi_union_pw_aff_read_from_str(ctx,
+						    mupa_set_tests[i].res);
+		mupa = mupa_set_tests[i].fn(mupa, set);
+		ok = isl_multi_union_pw_aff_plain_is_equal(mupa, res);
+		isl_multi_union_pw_aff_free(mupa);
+		isl_multi_union_pw_aff_free(res);
+		if (ok < 0)
+			return -1;
+		if (!ok)
+			isl_die(ctx, isl_error_unknown,
+				"unexpected result", return -1);
+	}
+
+	return 0;
+}
+
+/* Inputs for basic tests of binary operations on
+ * pairs of isl_multi_union_pw_aff and isl_union_set objects.
+ * "fn" is the function that is tested.
+ * "arg1" and "arg2" are string descriptions of the inputs.
+ * "res" is a string description of the expected result.
+ */
+struct {
+	__isl_give isl_multi_union_pw_aff *(*fn)(
+		__isl_take isl_multi_union_pw_aff *mupa,
+		__isl_take isl_union_set *uset);
+	const char *arg1;
+	const char *arg2;
+	const char *res;
+} mupa_uset_tests[] = {
+	{ &isl_multi_union_pw_aff_intersect_domain,
+	  "C[{ B[i,j] -> [i + 2j] }]", "{ B[i,i] }",
+	  "C[{ B[i,i] -> [3i] }]" },
+	{ &isl_multi_union_pw_aff_intersect_domain,
+	  "(C[] : { B[i,j] })", "{ B[i,i] }",
+	  "(C[] : { B[i,i] })" },
+	{ &isl_multi_union_pw_aff_intersect_domain,
+	  "(C[] : { B[i,j] })", "[N] -> { B[N,N] }",
+	  "[N] -> (C[] : { B[N,N] })" },
+	{ &isl_multi_union_pw_aff_intersect_domain,
+	  "C[]", "{ B[i,i] }",
+	  "(C[] : { B[i,i] })" },
+	{ &isl_multi_union_pw_aff_intersect_domain,
+	  "[N] -> (C[] : { : N >= 0 })", "{ B[i,i] }",
+	  "[N] -> (C[] : { B[i,i] : N >= 0 })" },
+};
+
+/* Perform some basic tests of binary operations on
+ * pairs of isl_multi_union_pw_aff and isl_union_set objects.
+ */
+static int test_mupa_uset(isl_ctx *ctx)
+{
+	int i;
+	isl_bool ok;
+	isl_multi_union_pw_aff *mupa, *res;
+	isl_union_set *uset;
+
+	for (i = 0; i < ARRAY_SIZE(mupa_uset_tests); ++i) {
+		mupa = isl_multi_union_pw_aff_read_from_str(ctx,
+						    mupa_uset_tests[i].arg1);
+		uset = isl_union_set_read_from_str(ctx,
+						    mupa_uset_tests[i].arg2);
+		res = isl_multi_union_pw_aff_read_from_str(ctx,
+						    mupa_uset_tests[i].res);
+		mupa = mupa_uset_tests[i].fn(mupa, uset);
+		ok = isl_multi_union_pw_aff_plain_is_equal(mupa, res);
+		isl_multi_union_pw_aff_free(mupa);
+		isl_multi_union_pw_aff_free(res);
+		if (ok < 0)
+			return -1;
+		if (!ok)
+			isl_die(ctx, isl_error_unknown,
+				"unexpected result", return -1);
+	}
+
+	return 0;
+}
+
+/* Inputs for basic tests of binary operations on
+ * pairs of isl_multi_union_pw_aff and isl_multi_aff objects.
+ * "fn" is the function that is tested.
+ * "arg1" and "arg2" are string descriptions of the inputs.
+ * "res" is a string description of the expected result.
+ */
+struct {
+	__isl_give isl_multi_union_pw_aff *(*fn)(
+		__isl_take isl_multi_union_pw_aff *mupa,
+		__isl_take isl_multi_aff *ma);
+	const char *arg1;
+	const char *arg2;
+	const char *res;
+} mupa_ma_tests[] = {
+	{ &isl_multi_union_pw_aff_apply_multi_aff,
+	  "C[{ A[i,j] -> [i]; B[i,j] -> [j] }, "
+	    "{ A[i,j] -> [j]; B[i,j] -> [i] }]",
+	  "{ C[a,b] -> D[b,a] }",
+	  "D[{ A[i,j] -> [j]; B[i,j] -> [i] }, "
+	    "{ A[i,j] -> [i]; B[i,j] -> [j] }]" },
+	{ &isl_multi_union_pw_aff_apply_multi_aff,
+	  "C[{ A[i,j] -> [i] : i >= 0; B[i,j] -> [j] }, "
+	    "{ A[i,j] -> [j]; B[i,j] -> [i] }]",
+	  "{ C[a,b] -> D[b,a] }",
+	  "D[{ A[i,j] -> [j] : i >= 0; B[i,j] -> [i] }, "
+	    "{ A[i,j] -> [i] : i >= 0; B[i,j] -> [j] }]" },
+	{ &isl_multi_union_pw_aff_apply_multi_aff,
+	  "C[{ A[i,j] -> [i]; B[i,j] -> [j] }]",
+	  "[N] -> { C[a] -> D[a + N] }",
+	  "[N] -> D[{ A[i,j] -> [i + N]; B[i,j] -> [j + N] }] " },
+	{ &isl_multi_union_pw_aff_apply_multi_aff,
+	  "C[]",
+	  "{ C[] -> D[] }",
+	  "D[]" },
+	{ &isl_multi_union_pw_aff_apply_multi_aff,
+	  "[N] -> (C[] : { : N >= 0 })",
+	  "{ C[] -> D[] }",
+	  "[N] -> (D[] : { : N >= 0 })" },
+	{ &isl_multi_union_pw_aff_apply_multi_aff,
+	  "C[]",
+	  "[N] -> { C[] -> D[N] }",
+	  "[N] -> D[{ [N] }]" },
+	{ &isl_multi_union_pw_aff_apply_multi_aff,
+	  "(C[] : { A[i,j] : i >= j })",
+	  "{ C[] -> D[] }",
+	  "(D[] : { A[i,j] : i >= j })" },
+	{ &isl_multi_union_pw_aff_apply_multi_aff,
+	  "[N] -> (C[] : { A[i,j] : N >= 0 })",
+	  "{ C[] -> D[] }",
+	  "[N] -> (D[] : { A[i,j] : N >= 0 })" },
+	{ &isl_multi_union_pw_aff_apply_multi_aff,
+	  "(C[] : { A[i,j] : i >= j })",
+	  "[N] -> { C[] -> D[N] }",
+	  "[N] -> (D[{ A[i,j] -> [N] : i >= j }])" },
+};
+
+/* Perform some basic tests of binary operations on
+ * pairs of isl_multi_union_pw_aff and isl_multi_aff objects.
+ */
+static int test_mupa_ma(isl_ctx *ctx)
+{
+	int i;
+	isl_bool ok;
+	isl_multi_union_pw_aff *mupa, *res;
+	isl_multi_aff *ma;
+
+	for (i = 0; i < ARRAY_SIZE(mupa_ma_tests); ++i) {
+		mupa = isl_multi_union_pw_aff_read_from_str(ctx,
+						    mupa_ma_tests[i].arg1);
+		ma = isl_multi_aff_read_from_str(ctx, mupa_ma_tests[i].arg2);
+		res = isl_multi_union_pw_aff_read_from_str(ctx,
+						    mupa_ma_tests[i].res);
+		mupa = mupa_ma_tests[i].fn(mupa, ma);
+		ok = isl_multi_union_pw_aff_plain_is_equal(mupa, res);
+		isl_multi_union_pw_aff_free(mupa);
+		isl_multi_union_pw_aff_free(res);
+		if (ok < 0)
+			return -1;
+		if (!ok)
+			isl_die(ctx, isl_error_unknown,
+				"unexpected result", return -1);
+	}
+
+	return 0;
+}
+
+/* Inputs for basic tests of binary operations on
+ * pairs of isl_multi_union_pw_aff and isl_pw_aff objects.
+ * "fn" is the function that is tested.
+ * "arg1" and "arg2" are string descriptions of the inputs.
+ * "res" is a string description of the expected result.
+ */
+struct {
+	__isl_give isl_union_pw_aff *(*fn)(
+		__isl_take isl_multi_union_pw_aff *mupa,
+		__isl_take isl_pw_aff *pa);
+	const char *arg1;
+	const char *arg2;
+	const char *res;
+} mupa_pa_tests[] = {
+	{ &isl_multi_union_pw_aff_apply_pw_aff,
+	  "C[{ A[i,j] -> [i]; B[i,j] -> [j] }]",
+	  "[N] -> { C[a] -> [a + N] }",
+	  "[N] -> { A[i,j] -> [i + N]; B[i,j] -> [j + N] }" },
+	{ &isl_multi_union_pw_aff_apply_pw_aff,
+	  "C[{ A[i,j] -> [i]; B[i,j] -> [j] }]",
+	  "{ C[a] -> [a] : a >= 0; C[a] -> [-a] : a < 0 }",
+	  "{ A[i,j] -> [i] : i >= 0; A[i,j] -> [-i] : i < 0; "
+	    "B[i,j] -> [j] : j >= 0; B[i,j] -> [-j] : j < 0 }" },
+	{ &isl_multi_union_pw_aff_apply_pw_aff,
+	  "C[]",
+	  "[N] -> { C[] -> [N] }",
+	  "[N] -> { [N] }" },
+	{ &isl_multi_union_pw_aff_apply_pw_aff,
+	  "C[]",
+	  "[N] -> { C[] -> [N] : N >= 0; C[] -> [-N] : N < 0 }",
+	  "[N] -> { [N] : N >= 0; [-N] : N < 0 }" },
+	{ &isl_multi_union_pw_aff_apply_pw_aff,
+	  "[N] -> (C[] : { : N >= 0 })",
+	  "[N] -> { C[] -> [N] }",
+	  "[N] -> { [N] : N >= 0 }" },
+	{ &isl_multi_union_pw_aff_apply_pw_aff,
+	  "[N] -> (C[] : { : N >= 0 })",
+	  "[N] -> { C[] -> [N] : N >= 0; C[] -> [-N] : N < 0 }",
+	  "[N] -> { [N] : N >= 0 }" },
+	{ &isl_multi_union_pw_aff_apply_pw_aff,
+	  "[N] -> (C[] : { : N >= 0 })",
+	  "{ C[] -> [0] }",
+	  "[N] -> { [0] : N >= 0 }" },
+	{ &isl_multi_union_pw_aff_apply_pw_aff,
+	  "(C[] : { A[i,j] : i >= j })",
+	  "[N] -> { C[] -> [N] }",
+	  "[N] -> { A[i,j] -> [N] : i >= j }" },
+	{ &isl_multi_union_pw_aff_apply_pw_aff,
+	  "(C[] : { A[i,j] : i >= j })",
+	  "[N] -> { C[] -> [N] : N >= 0 }",
+	  "[N] -> { A[i,j] -> [N] : i >= j and N >= 0 }" },
+};
+
+/* Perform some basic tests of binary operations on
+ * pairs of isl_multi_union_pw_aff and isl_pw_aff objects.
+ */
+static int test_mupa_pa(isl_ctx *ctx)
+{
+	int i;
+	isl_bool ok;
+	isl_multi_union_pw_aff *mupa;
+	isl_union_pw_aff *upa, *res;
+	isl_pw_aff *pa;
+
+	for (i = 0; i < ARRAY_SIZE(mupa_pa_tests); ++i) {
+		mupa = isl_multi_union_pw_aff_read_from_str(ctx,
+						    mupa_pa_tests[i].arg1);
+		pa = isl_pw_aff_read_from_str(ctx, mupa_pa_tests[i].arg2);
+		res = isl_union_pw_aff_read_from_str(ctx,
+						    mupa_pa_tests[i].res);
+		upa = mupa_pa_tests[i].fn(mupa, pa);
+		ok = isl_union_pw_aff_plain_is_equal(upa, res);
+		isl_union_pw_aff_free(upa);
+		isl_union_pw_aff_free(res);
+		if (ok < 0)
+			return -1;
+		if (!ok)
+			isl_die(ctx, isl_error_unknown,
+				"unexpected result", return -1);
+	}
+
+	return 0;
+}
+
+/* Inputs for basic tests of binary operations on
+ * pairs of isl_multi_union_pw_aff and isl_pw_multi_aff objects.
+ * "fn" is the function that is tested.
+ * "arg1" and "arg2" are string descriptions of the inputs.
+ * "res" is a string description of the expected result.
+ */
+struct {
+	__isl_give isl_multi_union_pw_aff *(*fn)(
+		__isl_take isl_multi_union_pw_aff *mupa,
+		__isl_take isl_pw_multi_aff *pma);
+	const char *arg1;
+	const char *arg2;
+	const char *res;
+} mupa_pma_tests[] = {
+	{ &isl_multi_union_pw_aff_apply_pw_multi_aff,
+	  "C[{ A[i,j] -> [i]; B[i,j] -> [j] }, "
+	    "{ A[i,j] -> [j]; B[i,j] -> [i] }]",
+	  "{ C[a,b] -> D[b,a] }",
+	  "D[{ A[i,j] -> [j]; B[i,j] -> [i] }, "
+	    "{ A[i,j] -> [i]; B[i,j] -> [j] }]" },
+	{ &isl_multi_union_pw_aff_apply_pw_multi_aff,
+	  "C[{ A[i,j] -> [i] : i >= 0; B[i,j] -> [j] }, "
+	    "{ A[i,j] -> [j]; B[i,j] -> [i] }]",
+	  "{ C[a,b] -> D[b,a] }",
+	  "D[{ A[i,j] -> [j] : i >= 0; B[i,j] -> [i] }, "
+	    "{ A[i,j] -> [i] : i >= 0; B[i,j] -> [j] }]" },
+	{ &isl_multi_union_pw_aff_apply_pw_multi_aff,
+	  "C[{ A[i,j] -> [i]; B[i,j] -> [j] }]",
+	  "[N] -> { C[a] -> D[a + N] }",
+	  "[N] -> D[{ A[i,j] -> [i + N]; B[i,j] -> [j + N] }]" },
+	{ &isl_multi_union_pw_aff_apply_pw_multi_aff,
+	  "C[{ A[i,j] -> [i]; B[i,j] -> [j] }]",
+	  "{ C[a] -> D[a] : a >= 0; C[a] -> D[-a] : a < 0 }",
+	  "D[{ A[i,j] -> [i] : i >= 0; A[i,j] -> [-i] : i < 0; "
+	      "B[i,j] -> [j] : j >= 0; B[i,j] -> [-j] : j < 0 }]" },
+	{ &isl_multi_union_pw_aff_apply_pw_multi_aff,
+	  "C[{ A[i,j] -> [i]; B[i,j] -> [j] }, "
+	    "{ A[i,j] -> [j]; B[i,j] -> [i] }]",
+	  "{ C[a,b] -> D[a,b] : a >= b; C[a,b] -> D[b,a] : a < b }",
+	  "D[{ A[i,j] -> [i] : i >= j; A[i,j] -> [j] : i < j; "
+	      "B[i,j] -> [j] : i <= j; B[i,j] -> [i] : i > j }, "
+	    "{ A[i,j] -> [j] : i >= j; A[i,j] -> [i] : i < j; "
+	      "B[i,j] -> [i] : i <= j; B[i,j] -> [j] : i > j }]" },
+	{ &isl_multi_union_pw_aff_apply_pw_multi_aff,
+	  "C[]",
+	  "{ C[] -> D[] }",
+	  "D[]" },
+	{ &isl_multi_union_pw_aff_apply_pw_multi_aff,
+	  "[N] -> (C[] : { : N >= 0 })",
+	  "{ C[] -> D[] }",
+	  "[N] -> (D[] : { : N >= 0 })" },
+	{ &isl_multi_union_pw_aff_apply_pw_multi_aff,
+	  "C[]",
+	  "[N] -> { C[] -> D[N] }",
+	  "[N] -> D[{ [N] }]" },
+	{ &isl_multi_union_pw_aff_apply_pw_multi_aff,
+	  "(C[] : { A[i,j] : i >= j })",
+	  "{ C[] -> D[] }",
+	  "(D[] : { A[i,j] : i >= j })" },
+	{ &isl_multi_union_pw_aff_apply_pw_multi_aff,
+	  "[N] -> (C[] : { A[i,j] : N >= 0 })",
+	  "{ C[] -> D[] }",
+	  "[N] -> (D[] : { A[i,j] : N >= 0 })" },
+	{ &isl_multi_union_pw_aff_apply_pw_multi_aff,
+	  "(C[] : { A[i,j] : i >= j })",
+	  "[N] -> { C[] -> D[N] }",
+	  "[N] -> (D[{ A[i,j] -> [N] : i >= j }])" },
+	{ &isl_multi_union_pw_aff_apply_pw_multi_aff,
+	  "C[]",
+	  "[N] -> { C[] -> D[N] : N >= 0; C[] -> D[-N] : N < 0 }",
+	  "[N] -> D[{ [N] : N >= 0; [-N] : N < 0 }]" },
+	{ &isl_multi_union_pw_aff_apply_pw_multi_aff,
+	  "[N] -> (C[] : { : N >= 0 })",
+	  "[N] -> { C[] -> D[N] }",
+	  "[N] -> D[{ [N] : N >= 0 }]" },
+	{ &isl_multi_union_pw_aff_apply_pw_multi_aff,
+	  "[N] -> (C[] : { : N >= 0 })",
+	  "[N] -> { C[] -> D[N] : N >= 0; C[] -> D[-N] : N < 0 }",
+	  "[N] -> D[{ [N] : N >= 0 }]" },
+	{ &isl_multi_union_pw_aff_apply_pw_multi_aff,
+	  "[N] -> (C[] : { : N >= 0 })",
+	  "{ C[] -> D[0] }",
+	  "[N] -> D[{ [0] : N >= 0 }]" },
+	{ &isl_multi_union_pw_aff_apply_pw_multi_aff,
+	  "(C[] : { A[i,j] : i >= j })",
+	  "[N] -> { C[] -> D[N] : N >= 0 }",
+	  "[N] -> D[{ A[i,j] -> [N] : i >= j and N >= 0 }]" },
+};
+
+/* Perform some basic tests of binary operations on
+ * pairs of isl_multi_union_pw_aff and isl_pw_multi_aff objects.
+ */
+static int test_mupa_pma(isl_ctx *ctx)
+{
+	int i;
+	isl_bool ok;
+	isl_multi_union_pw_aff *mupa, *res;
+	isl_pw_multi_aff *pma;
+
+	for (i = 0; i < ARRAY_SIZE(mupa_pma_tests); ++i) {
+		mupa = isl_multi_union_pw_aff_read_from_str(ctx,
+						    mupa_pma_tests[i].arg1);
+		pma = isl_pw_multi_aff_read_from_str(ctx,
+						    mupa_pma_tests[i].arg2);
+		res = isl_multi_union_pw_aff_read_from_str(ctx,
+						    mupa_pma_tests[i].res);
+		mupa = mupa_pma_tests[i].fn(mupa, pma);
+		ok = isl_multi_union_pw_aff_plain_is_equal(mupa, res);
+		isl_multi_union_pw_aff_free(mupa);
+		isl_multi_union_pw_aff_free(res);
+		if (ok < 0)
+			return -1;
+		if (!ok)
+			isl_die(ctx, isl_error_unknown,
+				"unexpected result", return -1);
+	}
+
+	return 0;
+}
+
+/* Inputs for basic tests of binary operations on
+ * pairs of isl_multi_union_pw_aff and isl_union_pw_multi_aff objects.
+ * "fn" is the function that is tested.
+ * "arg1" and "arg2" are string descriptions of the inputs.
+ * "res" is a string description of the expected result.
+ */
+struct {
+	__isl_give isl_multi_union_pw_aff *(*fn)(
+		__isl_take isl_multi_union_pw_aff *mupa,
+		__isl_take isl_union_pw_multi_aff *upma);
+	const char *arg1;
+	const char *arg2;
+	const char *res;
+} mupa_upma_tests[] = {
+	{ &isl_multi_union_pw_aff_pullback_union_pw_multi_aff,
+	  "C[{ B[i,j] -> [i + 2j] }]", "{ A[a,b] -> B[b,a] }",
+	  "C[{ A[a,b] -> [b + 2a] }]" },
+	{ &isl_multi_union_pw_aff_pullback_union_pw_multi_aff,
+	  "C[{ B[i,j] -> [i + 2j] }]",
+	  "{ A[a,b] -> B[b,a] : b > a }",
+	  "C[{ A[a,b] -> [b + 2a] : b > a }]" },
+	{ &isl_multi_union_pw_aff_pullback_union_pw_multi_aff,
+	  "C[{ B[i,j] -> [i + 2j] : j > 4 }]",
+	  "{ A[a,b] -> B[b,a] : b > a }",
+	  "C[{ A[a,b] -> [b + 2a] : b > a > 4 }]" },
+	{ &isl_multi_union_pw_aff_pullback_union_pw_multi_aff,
+	  "C[{ B[i,j] -> [i + 2j] }]",
+	  "{ A[a,b] -> B[b,a] : a > b; A[a,b] -> B[a,b] : a <= b }",
+	  "C[{ A[a,b] -> [b + 2a] : a > b; A[a,b] -> [a + 2b] : a <= b }]" },
+	{ &isl_multi_union_pw_aff_pullback_union_pw_multi_aff,
+	  "(C[] : { B[a,b] })",
+	  "{ A[a,b] -> B[b,a] }",
+	  "(C[] : { A[a,b] })" },
+	{ &isl_multi_union_pw_aff_pullback_union_pw_multi_aff,
+	  "(C[] : { B[a,b] })",
+	  "{ B[a,b] -> A[b,a] }",
+	  "(C[] : { })" },
+	{ &isl_multi_union_pw_aff_pullback_union_pw_multi_aff,
+	  "(C[] : { B[a,b] })",
+	  "{ A[a,b] -> B[b,a] : a > b }",
+	  "(C[] : { A[a,b] : a > b })" },
+	{ &isl_multi_union_pw_aff_pullback_union_pw_multi_aff,
+	  "(C[] : { B[a,b] : a > b })",
+	  "{ A[a,b] -> B[b,a] }",
+	  "(C[] : { A[a,b] : b > a })" },
+	{ &isl_multi_union_pw_aff_pullback_union_pw_multi_aff,
+	  "[N] -> (C[] : { B[a,b] : a > N })",
+	  "{ A[a,b] -> B[b,a] : a > b }",
+	  "[N] -> (C[] : { A[a,b] : a > b > N })" },
+	{ &isl_multi_union_pw_aff_pullback_union_pw_multi_aff,
+	  "(C[] : { B[a,b] : a > b })",
+	  "[N] -> { A[a,b] -> B[b,a] : a > N }",
+	  "[N] -> (C[] : { A[a,b] : b > a > N })" },
+	{ &isl_multi_union_pw_aff_pullback_union_pw_multi_aff,
+	  "C[]",
+	  "{ A[a,b] -> B[b,a] }",
+	  "C[]" },
+	{ &isl_multi_union_pw_aff_pullback_union_pw_multi_aff,
+	  "[N] -> (C[] : { : N >= 0 })",
+	  "{ A[a,b] -> B[b,a] }",
+	  "[N] -> (C[] : { : N >= 0 })" },
+	{ &isl_multi_union_pw_aff_pullback_union_pw_multi_aff,
+	  "C[]",
+	  "[N] -> { A[a,b] -> B[b,a] : N >= 0 }",
+	  "[N] -> (C[] : { : N >= 0 })" },
+};
+
+/* Perform some basic tests of binary operations on
+ * pairs of isl_multi_union_pw_aff and isl_union_pw_multi_aff objects.
+ */
+static int test_mupa_upma(isl_ctx *ctx)
+{
+	int i;
+	isl_bool ok;
+	isl_multi_union_pw_aff *mupa, *res;
+	isl_union_pw_multi_aff *upma;
+
+	for (i = 0; i < ARRAY_SIZE(mupa_upma_tests); ++i) {
+		mupa = isl_multi_union_pw_aff_read_from_str(ctx,
+						    mupa_upma_tests[i].arg1);
+		upma = isl_union_pw_multi_aff_read_from_str(ctx,
+						    mupa_upma_tests[i].arg2);
+		res = isl_multi_union_pw_aff_read_from_str(ctx,
+						    mupa_upma_tests[i].res);
+		mupa = mupa_upma_tests[i].fn(mupa, upma);
+		ok = isl_multi_union_pw_aff_plain_is_equal(mupa, res);
+		isl_multi_union_pw_aff_free(mupa);
+		isl_multi_union_pw_aff_free(res);
+		if (ok < 0)
+			return -1;
+		if (!ok)
+			isl_die(ctx, isl_error_unknown,
+				"unexpected result", return -1);
+	}
+
+	return 0;
+}
+
 int test_aff(isl_ctx *ctx)
 {
 	const char *str;
@@ -4536,11 +6017,35 @@ int test_aff(isl_ctx *ctx)
 	isl_aff *aff;
 	int zero, equal;
 
+	if (test_upa(ctx) < 0)
+		return -1;
 	if (test_bin_aff(ctx) < 0)
+		return -1;
+	if (test_bin_pw_aff(ctx) < 0)
 		return -1;
 	if (test_bin_upma(ctx) < 0)
 		return -1;
 	if (test_bin_upma_fail(ctx) < 0)
+		return -1;
+	if (test_un_mpa(ctx) < 0)
+		return -1;
+	if (test_bin_mpa(ctx) < 0)
+		return -1;
+	if (test_un_mupa(ctx) < 0)
+		return -1;
+	if (test_bin_mupa(ctx) < 0)
+		return -1;
+	if (test_mupa_set(ctx) < 0)
+		return -1;
+	if (test_mupa_uset(ctx) < 0)
+		return -1;
+	if (test_mupa_ma(ctx) < 0)
+		return -1;
+	if (test_mupa_pa(ctx) < 0)
+		return -1;
+	if (test_mupa_pma(ctx) < 0)
+		return -1;
+	if (test_mupa_upma(ctx) < 0)
 		return -1;
 
 	space = isl_space_set_alloc(ctx, 0, 1);
@@ -4579,23 +6084,12 @@ int test_aff(isl_ctx *ctx)
 	return 0;
 }
 
-/* Check that the computation below results in a single expression.
- * One or two expressions may result depending on which constraint
- * ends up being considered as redundant with respect to the other
- * constraints after the projection that is performed internally
- * by isl_set_dim_min.
+/* Check that "pa" consists of a single expression.
  */
-static int test_dim_max_1(isl_ctx *ctx)
+static int check_single_piece(isl_ctx *ctx, __isl_take isl_pw_aff *pa)
 {
-	const char *str;
-	isl_set *set;
-	isl_pw_aff *pa;
 	int n;
 
-	str = "[n] -> { [a, b] : n >= 0 and 4a >= -4 + n and b >= 0 and "
-				"-4a <= b <= 3 and b < n - 4a }";
-	set = isl_set_read_from_str(ctx, str);
-	pa = isl_set_dim_min(set, 0);
 	n = isl_pw_aff_n_piece(pa);
 	isl_pw_aff_free(pa);
 
@@ -4608,6 +6102,47 @@ static int test_dim_max_1(isl_ctx *ctx)
 	return 0;
 }
 
+/* Check that the computation below results in a single expression.
+ * One or two expressions may result depending on which constraint
+ * ends up being considered as redundant with respect to the other
+ * constraints after the projection that is performed internally
+ * by isl_set_dim_min.
+ */
+static int test_dim_max_1(isl_ctx *ctx)
+{
+	const char *str;
+	isl_set *set;
+	isl_pw_aff *pa;
+
+	str = "[n] -> { [a, b] : n >= 0 and 4a >= -4 + n and b >= 0 and "
+				"-4a <= b <= 3 and b < n - 4a }";
+	set = isl_set_read_from_str(ctx, str);
+	pa = isl_set_dim_min(set, 0);
+	return check_single_piece(ctx, pa);
+}
+
+/* Check that the computation below results in a single expression.
+ * The PIP problem corresponding to these constraints has a row
+ * that causes a split of the solution domain.  The solver should
+ * first pick rows that split off empty parts such that the actual
+ * solution domain does not get split.
+ * Note that the description contains some redundant constraints.
+ * If these constraints get removed first, then the row mentioned
+ * above does not appear in the PIP problem.
+ */
+static int test_dim_max_2(isl_ctx *ctx)
+{
+	const char *str;
+	isl_set *set;
+	isl_pw_aff *pa;
+
+	str = "[P, N] -> { [a] : a < N and a >= 0 and N > P and a <= P and "
+				"N > 0 and P >= 0 }";
+	set = isl_set_read_from_str(ctx, str);
+	pa = isl_set_dim_max(set, 0);
+	return check_single_piece(ctx, pa);
+}
+
 int test_dim_max(isl_ctx *ctx)
 {
 	int equal;
@@ -4618,6 +6153,8 @@ int test_dim_max(isl_ctx *ctx)
 	isl_pw_aff *pwaff;
 
 	if (test_dim_max_1(ctx) < 0)
+		return -1;
+	if (test_dim_max_2(ctx) < 0)
 		return -1;
 
 	str = "[N] -> { [i] : 0 <= i <= min(N,10) }";
@@ -4850,8 +6387,27 @@ static int test_disjoint(isl_ctx *ctx)
 	return 0;
 }
 
+/* Inputs for isl_pw_multi_aff_is_equal tests.
+ * "f1" and "f2" are the two function that need to be compared.
+ * "equal" is the expected result.
+ */
+struct {
+	int equal;
+	const char *f1;
+	const char *f2;
+} pma_equal_tests[] = {
+	{ 1, "[N] -> { [floor(N/2)] : 0 <= N <= 1 }",
+	     "[N] -> { [0] : 0 <= N <= 1 }" },
+	{ 1, "[N] -> { [floor(N/2)] : 0 <= N <= 2 }",
+	     "[N] -> { [0] : 0 <= N <= 1; [1] : N = 2 }" },
+	{ 0, "[N] -> { [floor(N/2)] : 0 <= N <= 2 }",
+	     "[N] -> { [0] : 0 <= N <= 1 }" },
+	{ 0, "{ [NaN] }", "{ [NaN] }" },
+};
+
 int test_equal(isl_ctx *ctx)
 {
+	int i;
 	const char *str;
 	isl_set *set, *set2;
 	int equal;
@@ -4868,13 +6424,29 @@ int test_equal(isl_ctx *ctx)
 	if (equal)
 		isl_die(ctx, isl_error_unknown, "unexpected result", return -1);
 
+	for (i = 0; i < ARRAY_SIZE(pma_equal_tests); ++i) {
+		int expected = pma_equal_tests[i].equal;
+		isl_pw_multi_aff *f1, *f2;
+
+		f1 = isl_pw_multi_aff_read_from_str(ctx, pma_equal_tests[i].f1);
+		f2 = isl_pw_multi_aff_read_from_str(ctx, pma_equal_tests[i].f2);
+		equal = isl_pw_multi_aff_is_equal(f1, f2);
+		isl_pw_multi_aff_free(f1);
+		isl_pw_multi_aff_free(f2);
+		if (equal < 0)
+			return -1;
+		if (equal != expected)
+			isl_die(ctx, isl_error_unknown,
+				"unexpected equality result", return -1);
+	}
+
 	return 0;
 }
 
 static int test_plain_fixed(isl_ctx *ctx, __isl_take isl_map *map,
 	enum isl_dim_type type, unsigned pos, int fixed)
 {
-	int test;
+	isl_bool test;
 
 	test = isl_map_plain_is_fixed(map, type, pos, NULL);
 	isl_map_free(map);
@@ -5028,6 +6600,167 @@ int test_union_pw(isl_ctx *ctx)
 	return 0;
 }
 
+/* Inputs for basic tests of functions that select
+ * subparts of the domain of an isl_multi_union_pw_aff.
+ * "fn" is the function that is tested.
+ * "arg" is a string description of the input.
+ * "res" is a string description of the expected result.
+ */
+struct {
+	__isl_give isl_union_set *(*fn)(
+		__isl_take isl_multi_union_pw_aff *mupa);
+	const char *arg;
+	const char *res;
+} un_locus_tests[] = {
+	{ &isl_multi_union_pw_aff_zero_union_set,
+	  "F[{ A[i,j] -> [i]; B[i,j] -> [i] }]",
+	  "{ A[0,j]; B[0,j] }" },
+	{ &isl_multi_union_pw_aff_zero_union_set,
+	  "F[{ A[i,j] -> [i-j]; B[i,j] -> [i-j] : i >= 0 }]",
+	  "{ A[i,i]; B[i,i] : i >= 0 }" },
+	{ &isl_multi_union_pw_aff_zero_union_set,
+	  "(F[] : { A[i,j]; B[i,i] : i >= 0 })",
+	  "{ A[i,j]; B[i,i] : i >= 0 }" },
+};
+
+/* Perform some basic tests of functions that select
+ * subparts of the domain of an isl_multi_union_pw_aff.
+ */
+static int test_un_locus(isl_ctx *ctx)
+{
+	int i;
+	isl_bool ok;
+	isl_union_set *uset, *res;
+	isl_multi_union_pw_aff *mupa;
+
+	for (i = 0; i < ARRAY_SIZE(un_locus_tests); ++i) {
+		mupa = isl_multi_union_pw_aff_read_from_str(ctx,
+						    un_locus_tests[i].arg);
+		res = isl_union_set_read_from_str(ctx, un_locus_tests[i].res);
+		uset = un_locus_tests[i].fn(mupa);
+		ok = isl_union_set_is_equal(uset, res);
+		isl_union_set_free(uset);
+		isl_union_set_free(res);
+		if (ok < 0)
+			return -1;
+		if (!ok)
+			isl_die(ctx, isl_error_unknown,
+				"unexpected result", return -1);
+	}
+
+	return 0;
+}
+
+/* Inputs for basic tests of functions that select
+ * subparts of an isl_union_map based on a relation
+ * specified by an isl_multi_union_pw_aff.
+ * "fn" is the function that is tested.
+ * "arg1" and "arg2" are string descriptions of the inputs.
+ * "res" is a string description of the expected result.
+ */
+struct {
+	__isl_give isl_union_map *(*fn)(
+		__isl_take isl_union_map *umap,
+		__isl_take isl_multi_union_pw_aff *mupa);
+	const char *arg1;
+	const char *arg2;
+	const char *res;
+} bin_locus_tests[] = {
+	{ &isl_union_map_eq_at_multi_union_pw_aff,
+	  "{ A[i,j] -> B[i',j'] }",
+	  "F[{ A[i,j] -> [i]; B[i,j] -> [i] }]",
+	  "{ A[i,j] -> B[i,j'] }" },
+	{ &isl_union_map_eq_at_multi_union_pw_aff,
+	  "{ A[i,j] -> B[i',j'] }",
+	  "F[{ A[i,j] -> [i]; B[i,j] -> [i] }, "
+	    "{ A[i,j] -> [j]; B[i,j] -> [j] }]",
+	  "{ A[i,j] -> B[i,j] }" },
+	{ &isl_union_map_eq_at_multi_union_pw_aff,
+	  "{ A[i,j] -> B[i',j']; A[i,j] -> C[i',j'] }",
+	  "F[{ A[i,j] -> [i]; B[i,j] -> [i] }]",
+	  "{ A[i,j] -> B[i,j'] }" },
+	{ &isl_union_map_eq_at_multi_union_pw_aff,
+	  "{ A[i,j] -> B[i',j']; A[i,j] -> C[i',j'] }",
+	  "F[{ A[i,j] -> [i]; B[i,j] -> [i]; C[i,j] -> [0] }]",
+	  "{ A[i,j] -> B[i,j']; A[0,j] -> C[i',j'] }" },
+	{ &isl_union_map_eq_at_multi_union_pw_aff,
+	  "{ A[i,j] -> B[i',j'] }",
+	  "F[{ A[i,j] -> [i] : i > j; B[i,j] -> [i] }]",
+	  "{ A[i,j] -> B[i,j'] : i > j }" },
+	{ &isl_union_map_lex_lt_at_multi_union_pw_aff,
+	  "{ A[i,j] -> B[i',j'] }",
+	  "F[{ A[i,j] -> [i]; B[i,j] -> [i] }, "
+	    "{ A[i,j] -> [j]; B[i,j] -> [j] }]",
+	  "{ A[i,j] -> B[i',j'] : i,j << i',j' }" },
+	{ &isl_union_map_lex_gt_at_multi_union_pw_aff,
+	  "{ A[i,j] -> B[i',j'] }",
+	  "F[{ A[i,j] -> [i]; B[i,j] -> [i] }, "
+	    "{ A[i,j] -> [j]; B[i,j] -> [j] }]",
+	  "{ A[i,j] -> B[i',j'] : i,j >> i',j' }" },
+	{ &isl_union_map_eq_at_multi_union_pw_aff,
+	  "{ A[i,j] -> B[i',j']; A[i,j] -> C[i',j'] }",
+	  "(F[] : { A[i,j]; B[i,j] })",
+	  "{ A[i,j] -> B[i',j'] }" },
+	{ &isl_union_map_eq_at_multi_union_pw_aff,
+	  "{ A[i,j] -> B[i',j'] }",
+	  "(F[] : { A[i,j] : i > j; B[i,j] : i < j })",
+	  "{ A[i,j] -> B[i',j'] : i > j and i' < j' }" },
+	{ &isl_union_map_eq_at_multi_union_pw_aff,
+	  "[N] -> { A[i,j] -> B[i',j'] : i,i' <= N }",
+	  "(F[] : { A[i,j] : i > j; B[i,j] : i < j })",
+	  "[N] -> { A[i,j] -> B[i',j'] : i > j and i' < j' and i,i' <= N }" },
+	{ &isl_union_map_eq_at_multi_union_pw_aff,
+	  "{ A[i,j] -> B[i',j'] }",
+	  "[N] -> (F[] : { A[i,j] : i < N; B[i,j] : i < N })",
+	  "[N] -> { A[i,j] -> B[i',j'] : i,i' < N }" },
+	{ &isl_union_map_eq_at_multi_union_pw_aff,
+	  "{ A[i,j] -> B[i',j'] }",
+	  "[N] -> (F[] : { : N >= 0 })",
+	  "[N] -> { A[i,j] -> B[i',j'] : N >= 0 }" },
+};
+
+/* Perform some basic tests of functions that select
+ * subparts of an isl_union_map based on a relation
+ * specified by an isl_multi_union_pw_aff.
+ */
+static int test_bin_locus(isl_ctx *ctx)
+{
+	int i;
+	isl_bool ok;
+	isl_union_map *umap, *res;
+	isl_multi_union_pw_aff *mupa;
+
+	for (i = 0; i < ARRAY_SIZE(bin_locus_tests); ++i) {
+		umap = isl_union_map_read_from_str(ctx,
+						    bin_locus_tests[i].arg1);
+		mupa = isl_multi_union_pw_aff_read_from_str(ctx,
+						    bin_locus_tests[i].arg2);
+		res = isl_union_map_read_from_str(ctx, bin_locus_tests[i].res);
+		umap = bin_locus_tests[i].fn(umap, mupa);
+		ok = isl_union_map_is_equal(umap, res);
+		isl_union_map_free(umap);
+		isl_union_map_free(res);
+		if (ok < 0)
+			return -1;
+		if (!ok)
+			isl_die(ctx, isl_error_unknown,
+				"unexpected result", return -1);
+	}
+
+	return 0;
+}
+
+/* Perform basic locus tests.
+ */
+static int test_locus(isl_ctx *ctx)
+{
+	if (test_un_locus(ctx) < 0)
+		return -1;
+	if (test_bin_locus(ctx) < 0)
+		return -1;
+	return 0;
+}
+
 /* Test that isl_union_pw_qpolynomial_eval picks up the function
  * defined over the correct domain space.
  */
@@ -5085,13 +6818,75 @@ static int test_eval_2(isl_ctx *ctx)
 	return 0;
 }
 
-/* Perform basic polynomial evaluation tests.
+/* Inputs for isl_pw_aff_eval test.
+ * "f" is the affine function.
+ * "p" is the point where the function should be evaluated.
+ * "res" is the expected result.
+ */
+struct {
+	const char *f;
+	const char *p;
+	const char *res;
+} aff_eval_tests[] = {
+	{ "{ [i] -> [2 * i] }", "{ [4] }", "8" },
+	{ "{ [i] -> [2 * i] }", "{ [x] : false }", "NaN" },
+	{ "{ [i] -> [i + floor(i/2) + floor(i/3)] }", "{ [0] }", "0" },
+	{ "{ [i] -> [i + floor(i/2) + floor(i/3)] }", "{ [1] }", "1" },
+	{ "{ [i] -> [i + floor(i/2) + floor(i/3)] }", "{ [2] }", "3" },
+	{ "{ [i] -> [i + floor(i/2) + floor(i/3)] }", "{ [3] }", "5" },
+	{ "{ [i] -> [i + floor(i/2) + floor(i/3)] }", "{ [4] }", "7" },
+	{ "{ [i] -> [floor((3 * floor(i/2))/5)] }", "{ [0] }", "0" },
+	{ "{ [i] -> [floor((3 * floor(i/2))/5)] }", "{ [1] }", "0" },
+	{ "{ [i] -> [floor((3 * floor(i/2))/5)] }", "{ [2] }", "0" },
+	{ "{ [i] -> [floor((3 * floor(i/2))/5)] }", "{ [3] }", "0" },
+	{ "{ [i] -> [floor((3 * floor(i/2))/5)] }", "{ [4] }", "1" },
+	{ "{ [i] -> [floor((3 * floor(i/2))/5)] }", "{ [6] }", "1" },
+	{ "{ [i] -> [floor((3 * floor(i/2))/5)] }", "{ [8] }", "2" },
+	{ "{ [i] -> [i] : i > 0; [i] -> [-i] : i < 0 }", "{ [4] }", "4" },
+	{ "{ [i] -> [i] : i > 0; [i] -> [-i] : i < 0 }", "{ [-2] }", "2" },
+	{ "{ [i] -> [i] : i > 0; [i] -> [-i] : i < 0 }", "{ [0] }", "NaN" },
+	{ "[N] -> { [2 * N] }", "[N] -> { : N = 4 }", "8" },
+	{ "{ [i, j] -> [(i + j)/2] }", "{ [1, 1] }", "1" },
+	{ "{ [i, j] -> [(i + j)/2] }", "{ [1, 2] }", "3/2" },
+	{ "{ [i] -> [i] : i mod 2 = 0 }", "{ [4] }", "4" },
+	{ "{ [i] -> [i] : i mod 2 = 0 }", "{ [3] }", "NaN" },
+	{ "{ [i] -> [i] : i mod 2 = 0 }", "{ [x] : false }", "NaN" },
+};
+
+/* Perform basic isl_pw_aff_eval tests.
+ */
+static int test_eval_aff(isl_ctx *ctx)
+{
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(aff_eval_tests); ++i) {
+		isl_stat r;
+		isl_pw_aff *pa;
+		isl_set *set;
+		isl_point *pnt;
+		isl_val *v;
+
+		pa = isl_pw_aff_read_from_str(ctx, aff_eval_tests[i].f);
+		set = isl_set_read_from_str(ctx, aff_eval_tests[i].p);
+		pnt = isl_set_sample_point(set);
+		v = isl_pw_aff_eval(pa, pnt);
+		r = val_check_equal(v, aff_eval_tests[i].res);
+		isl_val_free(v);
+		if (r < 0)
+			return -1;
+	}
+	return 0;
+}
+
+/* Perform basic evaluation tests.
  */
 static int test_eval(isl_ctx *ctx)
 {
 	if (test_eval_1(ctx) < 0)
 		return -1;
 	if (test_eval_2(ctx) < 0)
+		return -1;
+	if (test_eval_aff(ctx) < 0)
 		return -1;
 	return 0;
 }
@@ -5100,6 +6895,16 @@ static int test_eval(isl_ctx *ctx)
  */
 const char *output_tests[] = {
 	"{ [1, y] : 0 <= y <= 1; [x, -x] : 0 <= x <= 1 }",
+	"{ [x] : 1 = 0 }",
+	"{ [x] : false }",
+	"{ [x] : x mod 2 = 0 }",
+	"{ [x] : x mod 2 = 1 }",
+	"{ [x, y] : x mod 2 = 0 and 3*floor(y/2) < x }",
+	"{ [y, x] : x mod 2 = 0 and 3*floor(y/2) < x }",
+	"{ [x, y] : x mod 2 = 0 and 3*floor(y/2) = x + y }",
+	"{ [y, x] : x mod 2 = 0 and 3*floor(y/2) = x + y }",
+	"[n] -> { [y, x] : 2*((x + 2y) mod 3) = n }",
+	"{ [x, y] : (2*floor(x/3) + 3*floor(y/4)) mod 5 = x }",
 };
 
 /* Check that printing a set and reparsing a set from the printed output
@@ -5215,16 +7020,14 @@ int test_fixed_power(isl_ctx *ctx)
 {
 	const char *str;
 	isl_map *map;
-	isl_int exp;
+	isl_val *exp;
 	int equal;
 
-	isl_int_init(exp);
 	str = "{ [i] -> [i + 1] }";
 	map = isl_map_read_from_str(ctx, str);
-	isl_int_set_si(exp, 23);
-	map = isl_map_fixed_power(map, exp);
+	exp = isl_val_int_from_si(ctx, 23);
+	map = isl_map_fixed_power_val(map, exp);
 	equal = map_check_equal(map, "{ [i] -> [i + 23] }");
-	isl_int_clear(exp);
 	isl_map_free(map);
 	if (equal < 0)
 		return -1;
@@ -5315,7 +7118,7 @@ static int test_residue_class(isl_ctx *ctx)
 	const char *str;
 	isl_set *set;
 	isl_int m, r;
-	int res;
+	isl_stat res;
 
 	str = "{ [i,j] : j = 4 i + 1 and 0 <= i <= 100; "
 		"[i,j] : j = 4 i + 3 and 500 <= i <= 600 }";
@@ -5326,7 +7129,7 @@ static int test_residue_class(isl_ctx *ctx)
 	if (res >= 0 &&
 	    (isl_int_cmp_si(m, 2) != 0 || isl_int_cmp_si(r, 1) != 0))
 		isl_die(ctx, isl_error_unknown, "incorrect residue class",
-			res = -1);
+			res = isl_stat_error);
 	isl_int_clear(r);
 	isl_int_clear(m);
 	isl_set_free(set);
@@ -5365,6 +7168,64 @@ int test_align_parameters(isl_ctx *ctx)
 	return 0;
 }
 
+/* Check that isl_*_drop_unused_params actually drops the unused parameters
+ * by comparing the result using isl_*_plain_is_equal.
+ * Note that this assumes that isl_*_plain_is_equal does not consider
+ * objects that only differ by unused parameters to be equal.
+ */
+int test_drop_unused_parameters(isl_ctx *ctx)
+{
+	const char *str_with, *str_without;
+	isl_basic_set *bset1, *bset2;
+	isl_set *set1, *set2;
+	isl_pw_aff *pwa1, *pwa2;
+	int equal;
+
+	str_with = "[n, m, o] -> { [m] }";
+	str_without = "[m] -> { [m] }";
+
+	bset1 = isl_basic_set_read_from_str(ctx, str_with);
+	bset2 = isl_basic_set_read_from_str(ctx, str_without);
+	bset1 = isl_basic_set_drop_unused_params(bset1);
+	equal = isl_basic_set_plain_is_equal(bset1, bset2);
+	isl_basic_set_free(bset1);
+	isl_basic_set_free(bset2);
+
+	if (equal < 0)
+		return -1;
+	if (!equal)
+		isl_die(ctx, isl_error_unknown,
+			"result not as expected", return -1);
+
+	set1 = isl_set_read_from_str(ctx, str_with);
+	set2 = isl_set_read_from_str(ctx, str_without);
+	set1 = isl_set_drop_unused_params(set1);
+	equal = isl_set_plain_is_equal(set1, set2);
+	isl_set_free(set1);
+	isl_set_free(set2);
+
+	if (equal < 0)
+		return -1;
+	if (!equal)
+		isl_die(ctx, isl_error_unknown,
+			"result not as expected", return -1);
+
+	pwa1 = isl_pw_aff_read_from_str(ctx, str_with);
+	pwa2 = isl_pw_aff_read_from_str(ctx, str_without);
+	pwa1 = isl_pw_aff_drop_unused_params(pwa1);
+	equal = isl_pw_aff_plain_is_equal(pwa1, pwa2);
+	isl_pw_aff_free(pwa1);
+	isl_pw_aff_free(pwa2);
+
+	if (equal < 0)
+		return -1;
+	if (!equal)
+		isl_die(ctx, isl_error_unknown,
+			"result not as expected", return -1);
+
+	return 0;
+}
+
 static int test_list(isl_ctx *ctx)
 {
 	isl_id *a, *b, *c, *d, *id;
@@ -5377,12 +7238,14 @@ static int test_list(isl_ctx *ctx)
 	d = isl_id_alloc(ctx, "d", NULL);
 
 	list = isl_id_list_alloc(ctx, 4);
-	list = isl_id_list_add(list, a);
 	list = isl_id_list_add(list, b);
+	list = isl_id_list_insert(list, 0, a);
 	list = isl_id_list_add(list, c);
 	list = isl_id_list_add(list, d);
 	list = isl_id_list_drop(list, 1, 1);
 
+	if (!list)
+		return -1;
 	if (isl_id_list_n_id(list) != 3) {
 		isl_id_list_free(list);
 		isl_die(ctx, isl_error_unknown,
@@ -5488,11 +7351,105 @@ static int test_map_conversion(isl_ctx *ctx)
 	return 0;
 }
 
+/* Descriptions of isl_pw_multi_aff objects for testing conversion
+ * to isl_multi_pw_aff and back.
+ */
+const char *mpa_conversion_tests[] = {
+	"{ [x] -> A[x] }",
+	"{ [x] -> A[x] : x >= 0 }",
+	"{ [x] -> A[x] : x >= 0; [x] -> A[-x] : x < 0 }",
+	"{ [x] -> A[x, x + 1] }",
+	"{ [x] -> A[] }",
+	"{ [x] -> A[] : x >= 0 }",
+};
+
+/* Check that conversion from isl_pw_multi_aff to isl_multi_pw_aff and
+ * back to isl_pw_multi_aff preserves the original meaning.
+ */
+static int test_mpa_conversion(isl_ctx *ctx)
+{
+	int i;
+	isl_pw_multi_aff *pma1, *pma2;
+	isl_multi_pw_aff *mpa;
+	int equal;
+
+	for (i = 0; i < ARRAY_SIZE(mpa_conversion_tests); ++i) {
+		const char *str;
+		str = mpa_conversion_tests[i];
+		pma1 = isl_pw_multi_aff_read_from_str(ctx, str);
+		pma2 = isl_pw_multi_aff_copy(pma1);
+		mpa = isl_multi_pw_aff_from_pw_multi_aff(pma1);
+		pma1 = isl_pw_multi_aff_from_multi_pw_aff(mpa);
+		equal = isl_pw_multi_aff_plain_is_equal(pma1, pma2);
+		isl_pw_multi_aff_free(pma1);
+		isl_pw_multi_aff_free(pma2);
+
+		if (equal < 0)
+			return -1;
+		if (!equal)
+			isl_die(ctx, isl_error_unknown, "bad conversion",
+				return -1);
+	}
+
+	return 0;
+}
+
+/* Descriptions of union maps that should be convertible
+ * to an isl_multi_union_pw_aff.
+ */
+const char *umap_mupa_conversion_tests[] = {
+	"{ [a, b, c, d] -> s0[a, b, e, f] : "
+	    "exists (e0 = [(a - 2c)/3], e1 = [(-4 + b - 5d)/9], "
+	    "e2 = [(-d + f)/9]: 3e0 = a - 2c and 9e1 = -4 + b - 5d and "
+	    "9e2 = -d + f and f >= 0 and f <= 8 and 9e >= -5 - 2a and "
+	    "9e <= -2 - 2a) }",
+	"{ [a, b] -> [c] : exists (e0 = floor((-a - b + c)/5): "
+	    "5e0 = -a - b + c and c >= -a and c <= 4 - a) }",
+	"{ [a, b] -> [c] : exists d : 18 * d = -3 - a + 2c and 1 <= c <= 3 }",
+	"{ A[] -> B[0]; C[] -> B[1] }",
+	"{ A[] -> B[]; C[] -> B[] }",
+};
+
+/* Check that converting from isl_union_map to isl_multi_union_pw_aff and back
+ * to isl_union_map produces the original isl_union_map.
+ */
+static int test_union_map_mupa_conversion(isl_ctx *ctx)
+{
+	int i;
+	isl_union_map *umap1, *umap2;
+	isl_multi_union_pw_aff *mupa;
+	int equal;
+
+	for (i = 0; i < ARRAY_SIZE(umap_mupa_conversion_tests); ++i) {
+		const char *str;
+		str = umap_mupa_conversion_tests[i];
+		umap1 = isl_union_map_read_from_str(ctx, str);
+		umap2 = isl_union_map_copy(umap1);
+		mupa = isl_multi_union_pw_aff_from_union_map(umap2);
+		umap2 = isl_union_map_from_multi_union_pw_aff(mupa);
+		equal = isl_union_map_is_equal(umap1, umap2);
+		isl_union_map_free(umap1);
+		isl_union_map_free(umap2);
+
+		if (equal < 0)
+			return -1;
+		if (!equal)
+			isl_die(ctx, isl_error_unknown, "bad conversion",
+				return -1);
+	}
+
+	return 0;
+}
+
 static int test_conversion(isl_ctx *ctx)
 {
 	if (test_set_conversion(ctx) < 0)
 		return -1;
 	if (test_map_conversion(ctx) < 0)
+		return -1;
+	if (test_mpa_conversion(ctx) < 0)
+		return -1;
+	if (test_union_map_mupa_conversion(ctx) < 0)
 		return -1;
 	return 0;
 }
@@ -6226,7 +8183,7 @@ static int test_pw_multi_aff(isl_ctx *ctx)
 /* Check that we can properly parse multi piecewise affine expressions
  * where the piecewise affine expressions have different domains.
  */
-static int test_multi_pw_aff(isl_ctx *ctx)
+static int test_multi_pw_aff_1(isl_ctx *ctx)
 {
 	const char *str;
 	isl_set *dom, *dom2;
@@ -6268,6 +8225,87 @@ static int test_multi_pw_aff(isl_ctx *ctx)
 		isl_die(ctx, isl_error_unknown,
 			"domains unexpectedly equal", return -1);
 
+	return 0;
+}
+
+/* Check that the dimensions in the explicit domain
+ * of a multi piecewise affine expression are properly
+ * taken into account.
+ */
+static int test_multi_pw_aff_2(isl_ctx *ctx)
+{
+	const char *str;
+	isl_bool involves1, involves2, involves3, equal;
+	isl_multi_pw_aff *mpa, *mpa1, *mpa2;
+
+	str = "{ A[x,y] -> B[] : x >= y }";
+	mpa = isl_multi_pw_aff_read_from_str(ctx, str);
+	involves1 = isl_multi_pw_aff_involves_dims(mpa, isl_dim_in, 0, 2);
+	mpa1 = isl_multi_pw_aff_copy(mpa);
+
+	mpa = isl_multi_pw_aff_insert_dims(mpa, isl_dim_in, 0, 1);
+	involves2 = isl_multi_pw_aff_involves_dims(mpa, isl_dim_in, 0, 1);
+	involves3 = isl_multi_pw_aff_involves_dims(mpa, isl_dim_in, 1, 2);
+	str = "{ [a,x,y] -> B[] : x >= y }";
+	mpa2 = isl_multi_pw_aff_read_from_str(ctx, str);
+	equal = isl_multi_pw_aff_plain_is_equal(mpa, mpa2);
+	isl_multi_pw_aff_free(mpa2);
+
+	mpa = isl_multi_pw_aff_drop_dims(mpa, isl_dim_in, 0, 1);
+	mpa = isl_multi_pw_aff_set_tuple_name(mpa, isl_dim_in, "A");
+	if (equal >= 0 && equal)
+		equal = isl_multi_pw_aff_plain_is_equal(mpa, mpa1);
+	isl_multi_pw_aff_free(mpa1);
+	isl_multi_pw_aff_free(mpa);
+
+	if (involves1 < 0 || involves2 < 0 || involves3 < 0 || equal < 0)
+		return -1;
+	if (!equal)
+		isl_die(ctx, isl_error_unknown,
+			"incorrect result of dimension insertion/removal",
+			return isl_stat_error);
+	if (!involves1 || involves2 || !involves3)
+		isl_die(ctx, isl_error_unknown,
+			"incorrect characterization of involved dimensions",
+			return isl_stat_error);
+
+	return 0;
+}
+
+/* Check that isl_multi_union_pw_aff_multi_val_on_domain
+ * sets the explicit domain of a zero-dimensional result,
+ * such that it can be converted to an isl_union_map.
+ */
+static isl_stat test_multi_pw_aff_3(isl_ctx *ctx)
+{
+	isl_space *space;
+	isl_union_set *dom;
+	isl_multi_val *mv;
+	isl_multi_union_pw_aff *mupa;
+	isl_union_map *umap;
+
+	dom = isl_union_set_read_from_str(ctx, "{ A[]; B[] }");
+	space = isl_union_set_get_space(dom);
+	mv = isl_multi_val_zero(isl_space_set_from_params(space));
+	mupa = isl_multi_union_pw_aff_multi_val_on_domain(dom, mv);
+	umap = isl_union_map_from_multi_union_pw_aff(mupa);
+	isl_union_map_free(umap);
+	if (!umap)
+		return isl_stat_error;
+
+	return isl_stat_ok;
+}
+
+/* Perform some tests on multi piecewise affine expressions.
+ */
+static int test_multi_pw_aff(isl_ctx *ctx)
+{
+	if (test_multi_pw_aff_1(ctx) < 0)
+		return -1;
+	if (test_multi_pw_aff_2(ctx) < 0)
+		return -1;
+	if (test_multi_pw_aff_3(ctx) < 0)
+		return -1;
 	return 0;
 }
 
@@ -6380,6 +8418,79 @@ static int test_compute_divs(isl_ctx *ctx)
 	isl_set_free(set);
 	if (!set)
 		return -1;
+
+	return 0;
+}
+
+/* Check that isl_schedule_get_map is not confused by a schedule tree
+ * with divergent filter node parameters, as can result from a call
+ * to isl_schedule_intersect_domain.
+ */
+static int test_schedule_tree(isl_ctx *ctx)
+{
+	const char *str;
+	isl_union_set *uset;
+	isl_schedule *sched1, *sched2;
+	isl_union_map *umap;
+
+	uset = isl_union_set_read_from_str(ctx, "{ A[i] }");
+	sched1 = isl_schedule_from_domain(uset);
+	uset = isl_union_set_read_from_str(ctx, "{ B[] }");
+	sched2 = isl_schedule_from_domain(uset);
+
+	sched1 = isl_schedule_sequence(sched1, sched2);
+	str = "[n] -> { A[i] : 0 <= i < n; B[] }";
+	uset = isl_union_set_read_from_str(ctx, str);
+	sched1 = isl_schedule_intersect_domain(sched1, uset);
+	umap = isl_schedule_get_map(sched1);
+	isl_schedule_free(sched1);
+	isl_union_map_free(umap);
+	if (!umap)
+		return -1;
+
+	return 0;
+}
+
+/* Check that a zero-dimensional prefix schedule keeps track
+ * of the domain and outer filters.
+ */
+static int test_schedule_tree_prefix(isl_ctx *ctx)
+{
+	const char *str;
+	isl_bool equal;
+	isl_union_set *uset;
+	isl_union_set_list *filters;
+	isl_multi_union_pw_aff *mupa, *mupa2;
+	isl_schedule_node *node;
+
+	str = "{ S1[i,j] : 0 <= i,j < 10; S2[i,j] : 0 <= i,j < 10 }";
+	uset = isl_union_set_read_from_str(ctx, str);
+	node = isl_schedule_node_from_domain(uset);
+	node = isl_schedule_node_child(node, 0);
+
+	str = "{ S1[i,j] : i > j }";
+	uset = isl_union_set_read_from_str(ctx, str);
+	filters = isl_union_set_list_from_union_set(uset);
+	str = "{ S1[i,j] : i <= j; S2[i,j] }";
+	uset = isl_union_set_read_from_str(ctx, str);
+	filters = isl_union_set_list_add(filters, uset);
+	node = isl_schedule_node_insert_sequence(node, filters);
+
+	node = isl_schedule_node_child(node, 0);
+	node = isl_schedule_node_child(node, 0);
+	mupa = isl_schedule_node_get_prefix_schedule_multi_union_pw_aff(node);
+	str = "([] : { S1[i,j] : i > j })";
+	mupa2 = isl_multi_union_pw_aff_read_from_str(ctx, str);
+	equal = isl_multi_union_pw_aff_plain_is_equal(mupa, mupa2);
+	isl_multi_union_pw_aff_free(mupa2);
+	isl_multi_union_pw_aff_free(mupa);
+	isl_schedule_node_free(node);
+
+	if (equal < 0)
+		return -1;
+	if (!equal)
+		isl_die(ctx, isl_error_unknown, "unexpected prefix schedule",
+			return -1);
 
 	return 0;
 }
@@ -6784,7 +8895,7 @@ const char *chambers_tests[] = {
 
 /* Add the domain of "cell" to "cells".
  */
-static int add_cell(__isl_take isl_cell *cell, void *user)
+static isl_stat add_cell(__isl_take isl_cell *cell, void *user)
 {
 	isl_basic_set_list **cells = user;
 	isl_basic_set *dom;
@@ -6793,7 +8904,7 @@ static int add_cell(__isl_take isl_cell *cell, void *user)
 	isl_cell_free(cell);
 	*cells = isl_basic_set_list_add(*cells, dom);
 
-	return *cells ? 0 : -1;
+	return *cells ? isl_stat_ok : isl_stat_error;
 }
 
 /* Check that the elements of "list" are pairwise disjoint.
@@ -6881,6 +8992,7 @@ struct {
 	{ "conversion", &test_conversion },
 	{ "list", &test_list },
 	{ "align parameters", &test_align_parameters },
+	{ "drop unused parameters", &test_drop_unused_parameters },
 	{ "preimage", &test_preimage },
 	{ "pullback", &test_pullback },
 	{ "AST", &test_ast },
@@ -6904,9 +9016,12 @@ struct {
 	{ "injective", &test_injective },
 	{ "schedule (whole component)", &test_schedule_whole },
 	{ "schedule (incremental)", &test_schedule_incremental },
+	{ "schedule tree", &test_schedule_tree },
+	{ "schedule tree prefix", &test_schedule_tree_prefix },
 	{ "schedule tree grouping", &test_schedule_tree_group },
 	{ "tile", &test_tile },
 	{ "union_pw", &test_union_pw },
+	{ "locus", &test_locus },
 	{ "eval", &test_eval },
 	{ "parse", &test_parse },
 	{ "single-valued", &test_sv },

@@ -74,6 +74,7 @@
 #include <clang/Sema/Sema.h>
 
 #include "extract_interface.h"
+#include "generator.h"
 #include "python.h"
 
 using namespace std;
@@ -89,6 +90,11 @@ static llvm::cl::opt<string> InputFilename(llvm::cl::Positional,
 static llvm::cl::list<string> Includes("I",
 			llvm::cl::desc("Header search path"),
 			llvm::cl::value_desc("path"), llvm::cl::Prefix);
+
+static llvm::cl::opt<string> Language(llvm::cl::Required,
+	llvm::cl::ValueRequired, "language",
+	llvm::cl::desc("Bindings to generate"),
+	llvm::cl::value_desc("name"));
 
 static const char *ResourceDir =
 	CLANG_PREFIX "/lib/clang/" CLANG_VERSION_STRING;
@@ -369,6 +375,24 @@ static void set_lang_defaults(CompilerInstance *Clang)
 
 #endif
 
+#ifdef SETINVOCATION_TAKES_SHARED_PTR
+
+static void set_invocation(CompilerInstance *Clang,
+	CompilerInvocation *invocation)
+{
+	Clang->setInvocation(std::make_shared<CompilerInvocation>(*invocation));
+}
+
+#else
+
+static void set_invocation(CompilerInstance *Clang,
+	CompilerInvocation *invocation)
+{
+	Clang->setInvocation(invocation);
+}
+
+#endif
+
 int main(int argc, char *argv[])
 {
 	llvm::cl::ParseCommandLineOptions(argc, argv);
@@ -380,7 +404,7 @@ int main(int argc, char *argv[])
 	CompilerInvocation *invocation =
 		construct_invocation(InputFilename.c_str(), Diags);
 	if (invocation)
-		Clang->setInvocation(invocation);
+		set_invocation(Clang, invocation);
 	Clang->createFileManager();
 	Clang->createSourceManager(Clang->getFileManager());
 	TargetInfo *target = create_target_info(Clang, Diags);
@@ -421,8 +445,16 @@ int main(int argc, char *argv[])
 	ParseAST(*sema);
 	Diags.getClient()->EndSourceFile();
 
-	generate_python(consumer.exported_types, consumer.exported_functions,
-			consumer.functions);
+	generator *gen = NULL;
+	if (Language.compare("python") == 0)
+		gen = new python_generator(consumer.exported_types,
+			consumer.exported_functions, consumer.functions);
+	else
+		cerr << "Language '" << Language << "' not recognized." << endl
+		     << "Not generating bindings." << endl;
+
+	if (gen)
+		gen->generate();
 
 	delete sema;
 	delete Clang;
