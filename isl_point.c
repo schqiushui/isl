@@ -9,7 +9,6 @@
 #include <isl_val_private.h>
 #include <isl_vec_private.h>
 #include <isl_output_private.h>
-#include <isl/deprecated/point_int.h>
 
 #include <set_to_map.c>
 
@@ -103,17 +102,18 @@ __isl_give isl_point *isl_point_copy(__isl_keep isl_point *pnt)
 	return pnt;
 }
 
-void isl_point_free(__isl_take isl_point *pnt)
+__isl_null isl_point *isl_point_free(__isl_take isl_point *pnt)
 {
 	if (!pnt)
-		return;
+		return NULL;
 
 	if (--pnt->ref > 0)
-		return;
+		return NULL;
 
 	isl_space_free(pnt->dim);
 	isl_vec_free(pnt->vec);
 	free(pnt);
+	return NULL;
 }
 
 __isl_give isl_point *isl_point_void(__isl_take isl_space *dim)
@@ -130,23 +130,6 @@ isl_bool isl_point_is_void(__isl_keep isl_point *pnt)
 		return isl_bool_error;
 
 	return pnt->vec->size == 0;
-}
-
-int isl_point_get_coordinate(__isl_keep isl_point *pnt,
-	enum isl_dim_type type, int pos, isl_int *v)
-{
-	if (!pnt || isl_point_is_void(pnt))
-		return -1;
-
-	if (pos < 0 || pos >= isl_space_dim(pnt->dim, type))
-		isl_die(isl_point_get_ctx(pnt), isl_error_invalid,
-			"position out of bounds", return -1);
-
-	if (type == isl_dim_set)
-		pos += isl_space_dim(pnt->dim, isl_dim_param);
-	isl_int_set(*v, pnt->vec->el[1 + pos]);
-
-	return 0;
 }
 
 /* Return the value of coordinate "pos" of type "type" of "pnt".
@@ -174,30 +157,6 @@ __isl_give isl_val *isl_point_get_coordinate_val(__isl_keep isl_point *pnt,
 	v = isl_val_rat_from_isl_int(ctx, pnt->vec->el[1 + pos],
 						pnt->vec->el[0]);
 	return isl_val_normalize(v);
-}
-
-__isl_give isl_point *isl_point_set_coordinate(__isl_take isl_point *pnt,
-	enum isl_dim_type type, int pos, isl_int v)
-{
-	if (!pnt || isl_point_is_void(pnt))
-		return pnt;
-
-	pnt = isl_point_cow(pnt);
-	if (!pnt)
-		return NULL;
-	pnt->vec = isl_vec_cow(pnt->vec);
-	if (!pnt->vec)
-		goto error;
-
-	if (type == isl_dim_set)
-		pos += isl_space_dim(pnt->dim, isl_dim_param);
-
-	isl_int_set(pnt->vec->el[1 + pos], v);
-
-	return pnt;
-error:
-	isl_point_free(pnt);
-	return NULL;
 }
 
 /* Replace coordinate "pos" of type "type" of "pnt" by "v".
@@ -392,18 +351,19 @@ isl_bool isl_basic_map_contains_point(__isl_keep isl_basic_map *bmap,
 	return contains;
 }
 
-int isl_map_contains_point(__isl_keep isl_map *map, __isl_keep isl_point *point)
+isl_bool isl_map_contains_point(__isl_keep isl_map *map,
+	__isl_keep isl_point *point)
 {
 	int i;
-	int found = 0;
+	isl_bool found = isl_bool_false;
 
 	if (!map || !point)
-		return -1;
+		return isl_bool_error;
 
 	map = isl_map_copy(map);
 	map = isl_map_compute_divs(map);
 	if (!map)
-		return -1;
+		return isl_bool_error;
 
 	for (i = 0; i < map->n; ++i) {
 		found = isl_basic_map_contains_point(map->p[i], point);
@@ -417,7 +377,7 @@ int isl_map_contains_point(__isl_keep isl_map *map, __isl_keep isl_point *point)
 	return found;
 error:
 	isl_map_free(map);
-	return -1;
+	return isl_bool_error;
 }
 
 isl_bool isl_set_contains_point(__isl_keep isl_set *set,
@@ -470,7 +430,7 @@ __isl_give isl_union_set *isl_union_set_from_point(__isl_take isl_point *pnt)
 __isl_give isl_basic_set *isl_basic_set_box_from_points(
 	__isl_take isl_point *pnt1, __isl_take isl_point *pnt2)
 {
-	isl_basic_set *bset;
+	isl_basic_set *bset = NULL;
 	unsigned total;
 	int i;
 	int k;
@@ -548,6 +508,7 @@ error:
 	isl_point_free(pnt1);
 	isl_point_free(pnt2);
 	isl_int_clear(t);
+	isl_basic_set_free(bset);
 	return NULL;
 }
 
@@ -581,7 +542,6 @@ __isl_give isl_printer *isl_printer_print_point(
 	struct isl_print_space_data data = { 0 };
 	int i;
 	unsigned nparam;
-	unsigned dim;
 
 	if (!pnt)
 		return p;
@@ -591,7 +551,6 @@ __isl_give isl_printer *isl_printer_print_point(
 	}
 
 	nparam = isl_space_dim(pnt->dim, isl_dim_param);
-	dim = isl_space_dim(pnt->dim, isl_dim_set);
 	if (nparam > 0) {
 		p = isl_printer_print_str(p, "[");
 		for (i = 0; i < nparam; ++i) {
